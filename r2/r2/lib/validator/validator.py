@@ -64,6 +64,8 @@ import re, inspect
 from itertools import chain
 from functools import wraps
 
+# CUSTOM
+from r2.lib.menus import SiteThemeMenu
 
 def can_view_link_comments(article):
     return (article.subreddit_slow.can_view(c.user) and
@@ -847,7 +849,7 @@ class VAccountByName(VRequired):
         return self.error()
 
     def param_docs(self):
-        return {self.param: "A valid, existing reddit username"}
+        return {self.param: "A valid, existing %s username" % g.brander_site}
 
 
 class VFriendOfMine(VAccountByName):
@@ -1104,7 +1106,7 @@ class VVerifiedUser(VUser):
             raise VerifiedUserRequiredException
 
 class VGold(VUser):
-    notes = "*Requires a subscription to [reddit gold](/gold/about)*"
+    notes = "*Requires a subscription to [" + g.brander_site + " gold](/gold/about)*"
     def run(self):
         VUser.run(self)
         if not c.user.gold:
@@ -1856,7 +1858,7 @@ class VMessageRecipient(VExistingUname):
         if not name:
             return self.error()
         is_subreddit = False
-        if name.startswith('/r/'):
+        if name.startswith('/%s/' % g.brander_community_abbr):
             name = name[3:]
             is_subreddit = True
         elif name.startswith('#'):
@@ -1866,7 +1868,7 @@ class VMessageRecipient(VExistingUname):
         # A user in timeout should only be able to message us, the admins.
         if (c.user.in_timeout and
                 not (is_subreddit and
-                     '/r/%s' % name == g.admin_message_acct)):
+                     '/%s/%s' % (g.brander_community_abbr, name) == g.admin_message_acct)):
             abort(403, 'forbidden')
 
         if is_subreddit:
@@ -2315,6 +2317,83 @@ class VOneOf(Validator):
             self.param: 'one of (%s)' % ', '.join("`%s`" % s
                                                   for s in self.options),
         }
+
+
+# CUSTOM
+class VNop(Validator):
+    def __init__(self, param, options = (), *a, **kw):
+        Validator.__init__(self, param, *a, **kw)
+        self.options = options
+
+    def run(self, val):
+        return val
+
+    def param_docs(self):
+        return {
+            self.param: 'nop one of (%s)' % ', '.join("`%s`" % s
+                                                  for s in self.options),
+        }
+
+# CUSTOM - Defaults to c.user.name
+class VChatUser(Validator):
+    def __init__(self, param, default = "", **kw):
+        Validator.__init__(self, param, default, **kw)
+
+    def run(self, val):
+        if val is "" and c.user_is_loggedin:
+            val = c.user.name
+        elif val is "" and not c.user_is_loggedin:
+            val = g.live_config['chat_default_username']
+        return val
+
+    def param_docs(self):
+        return {
+            self.param: 'nop one of (%s)',
+        }
+
+# CUSTOM - Defaults to random if logged in, "guest" otherwise (for The Lounge custom feature)
+class VChatClientUser(Validator):
+    def __init__(self, param, default = "", **kw):
+        Validator.__init__(self, param, default, **kw)
+
+    max_chat_client_user_length = 20
+    def run(self, val):
+        if val is "" and c.user_is_loggedin:
+            val = "".join(random.choice(string.ascii_letters+string.digits) for i in range(self.max_chat_client_user_length))
+        elif val is "" and not c.user_is_loggedin:
+            val = g.live_config['chat_default_username']
+
+        if val and len(val) > self.max_chat_client_user_length:
+            self.set_error(errors.TOO_LONG, {'max_length': self.max_chat_client_user_length}, code=400)
+
+        return val
+
+    def param_docs(self):
+        return {
+            self.param: 'generate a random username if null, guests get a default username',
+        }
+
+# CUSTOM - Defaults to empty string for guests and random for logged in.
+class VChatClientAuthToken(Validator):
+    def __init__(self, param, default = "", **kw):
+        Validator.__init__(self, param, default, **kw)
+
+    token_length = 20
+    def run(self, val):
+
+        if val is "" and c.user_is_loggedin:
+            val = "".join(random.choice(string.ascii_letters+string.digits) for i in range(self.token_length))
+
+        if val and len(val) > self.token_length:
+            self.set_error(errors.TOO_LONG, {'max_length': self.token_length}, code=400)
+
+        return val
+
+    def param_docs(self):
+        return {
+            self.param: 'generate a random token if null and logged in',
+        }
+
 
 
 class VList(Validator):
@@ -3167,7 +3246,7 @@ class VMultiByPath(Validator):
         }
 
 
-sr_path_rx = re.compile(r"\A(/?r/)?(?P<name>.*?)/?\Z")
+sr_path_rx = re.compile(r"\A(/?" + g.brander_community_abbr + "/)?(?P<name>.*?)/?\Z")
 class VSubredditList(Validator):
 
     def __init__(self, param, limit=20, allow_language_srs=True):
@@ -3281,3 +3360,55 @@ class VSigned(Validator):
 
 def need_provider_captcha():
     return False
+
+class VGlobalBanByUsername(Validator):
+    def run(self, username, required_fullname=None):
+        if not username:
+            return self.set_error(errors.NO_TEXT)
+
+        try:
+            user = Account._by_name(username)
+            a = GlobalBan._by_user_id(user._id)
+        except NotFound:
+            a = None
+
+        if a and required_fullname and a._fullname != required_fullname:
+            return self.set_error(errors.INVALID_OPTION)
+        else:
+            return a
+
+# CUSTOM: IP Bans
+class VIpBanByIp(Validator):
+    def run(self, ip, required_fullname=None):
+        if not ip:
+            return self.set_error(errors.NO_TEXT)
+
+        try:
+            a = IpBan._by_ip(ip)
+        except NotFound:
+            a = None
+
+        if a and required_fullname and a._fullname != required_fullname:
+            return self.set_error(errors.INVALID_OPTION)
+        else:
+            return a
+
+# CUSTOM: Site Theme
+# TODO: should be a VOneOf
+class VSiteTheme(Validator):
+    @staticmethod
+    def validate_theme(theme, strict=False):
+        if theme in SiteThemeMenu._options:
+            return theme
+        else:
+            if not strict:
+                return g.live_config['site_theme_default']
+            else:
+                raise ValueError("invalid theme %r" % theme)
+    def run(self, theme):
+        return VSiteTheme.validate_theme(theme)
+
+    def param_docs(self):
+        return {
+            self.param: "a valid site theme (underscore separated)",
+}

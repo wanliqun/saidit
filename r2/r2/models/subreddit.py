@@ -132,7 +132,7 @@ class BaseSite(object):
 
     @property
     def path(self):
-        return "/r/%s/" % self.name
+        return "/" + g.brander_community_abbr + "/%s/" % self.name
 
     @property
     def user_path(self):
@@ -225,7 +225,7 @@ class Subreddit(Thing, Printable, BaseSite):
         allow_top=False, # overridden in "_new"
         reported=0,
         valid_votes=0,
-        show_media=False,
+        show_media=True,
         show_media_preview=True,
         domain=None,
         suggested_comment_sort=None,
@@ -250,7 +250,7 @@ class Subreddit(Thing, Printable, BaseSite):
         description="",
         public_description="",
         submit_text="",
-        public_traffic=False,
+        public_traffic=True,
         spam_links='high',
         spam_selfposts='high',
         spam_comments='low',
@@ -266,6 +266,9 @@ class Subreddit(Thing, Printable, BaseSite):
         hide_ads=False,
         ban_count=0,
         quarantine=False,
+
+        # CUSTOM
+        chat_enabled = True,
     )
 
     # special attributes that shouldn't set Thing data attributes because they
@@ -280,8 +283,9 @@ class Subreddit(Thing, Printable, BaseSite):
                                                'gilding_server_seconds',
                                                'ban_count')
 
-    sr_limit = 50
-    gold_limit = 100
+    # CUSTOM: configurable limits
+    # sr_limit = 50
+    # gold_limit = 100
     DEFAULT_LIMIT = object()
 
     ICON_EXACT_SIZE = (256, 256)
@@ -394,7 +398,7 @@ class Subreddit(Thing, Printable, BaseSite):
         if not name:
             return False
 
-        if allow_reddit_dot_com and name.lower() == "reddit.com":
+        if allow_reddit_dot_com and name.lower() == g.domain:
             return True
 
         valid = bool(subreddit_rx.match(name))
@@ -619,7 +623,7 @@ class Subreddit(Thing, Printable, BaseSite):
 
     @property
     def _related_multipath(self):
-        return '/r/%s/m/related' % self.name.lower()
+        return '/%s/%s/m/related' % (g.brander_community_abbr, self.name.lower())
 
     @property
     def related_subreddits(self):
@@ -733,7 +737,8 @@ class Subreddit(Thing, Printable, BaseSite):
 
         if override is not None:
             return override
-        elif self.is_banned(user):
+
+        elif self.is_banned(user) or user.is_global_banned:
             return False
         elif self.type == 'gold_restricted' and user.gold:
             return True
@@ -754,6 +759,8 @@ class Subreddit(Thing, Printable, BaseSite):
         if c.user_is_admin:
             return True
         elif self.is_banned(user) and not promotion:
+            return False
+        elif user.is_global_banned:
             return False
         elif self.spammy():
             return False
@@ -1011,6 +1018,9 @@ class Subreddit(Thing, Printable, BaseSite):
                 elif rel_name == "muted":
                     muted_srids.add(sr_id)
 
+        # ensures that get_trimmed_sr_dicts() gets a correct .banned value.
+        global_banned = user.is_global_banned
+
         ret = {}
         for sr in srs:
             sr_id = sr._id
@@ -1018,7 +1028,7 @@ class Subreddit(Thing, Printable, BaseSite):
                 subscriber=sr_id in subscriber_srids,
                 moderator=sr_id in moderator_srids,
                 contributor=sr_id in contributor_srids,
-                banned=sr_id in banned_srids,
+                banned=sr_id in banned_srids or global_banned,
                 muted=sr_id in muted_srids,
             )
         return ret
@@ -1050,7 +1060,8 @@ class Subreddit(Thing, Printable, BaseSite):
             # item.score in builder.py to be ups-downs)
             item.likes = item.subscriber or None
             base_score = item.score - (1 if item.likes else 0)
-            item.voting_score = [(base_score + x - 1) for x in range(3)]
+            # CUSTOM: voting model
+            item.voting_score = [(base_score + x - 1) for x in range(4)]
             item.score_fmt = Score.subscribers
 
             #will seem less horrible when add_props is in pages.py
@@ -1150,8 +1161,10 @@ class Subreddit(Thing, Printable, BaseSite):
             sr_ids = NamedGlobals.get("popular_sr_ids")
 
         if user:
-            excludes = set(cls.user_subreddits(user, limit=None))
-            sr_ids = list(set(sr_ids) - excludes)
+            # SaidIt
+            if not feature.is_enabled('random_includes_subscriptions'):
+                excludes = set(cls.user_subreddits(user, limit=None))
+                sr_ids = list(set(sr_ids) - excludes)
 
         if not sr_ids:
             return Subreddit._by_name(g.default_sr)
@@ -1215,10 +1228,13 @@ class Subreddit(Thing, Printable, BaseSite):
         # if no explicit limit was passed
         if limit is Subreddit.DEFAULT_LIMIT:
             if user and user.gold:
-                # Goldies get extra subreddits
-                limit = Subreddit.gold_limit
+
+                # CUSTOM: configurable limit, 50 maybe not enough
+		# Goldies get extra subreddits
+		limit = g.gold_limit
             else:
-                limit = Subreddit.sr_limit
+		# CUSTOM: configurable limit, 100 maybe not enough
+		limit = g.sr_limit
 
         # note: for user not logged in, the fake user account has
         # has_subscribed == False by default.
@@ -1247,6 +1263,16 @@ class Subreddit(Thing, Printable, BaseSite):
             user.has_subscribed = True
             user._commit()
             srs = cls.user_subreddits(user=None, ids=False, limit=None)
+
+            # CUSTOM: Auto Subscribe All
+            if feature.is_enabled('auto_subscribe_all'):
+                sr_ids = NamedGlobals.get("popular_sr_ids")
+                if g.live_config['auto_subscribe_all_include_over_18'] == 'true':
+                    sr_ids = sr_ids + NamedGlobals.get("popular_over_18_sr_ids")
+                if len(sr_ids) > int(g.live_config['auto_subscribe_all_limit']) and int(g.live_config['auto_subscribe_all_limit']) > 0:
+                    sr_ids = sr_ids[:int(g.live_config['auto_subscribe_all_limit'])]
+                srs = Subreddit._byID(sr_ids, data=True, return_dict=False, stale=True)
+
             cls.subscribe_multiple(user, srs)
 
     def keep_item(self, wrapped):
@@ -1446,6 +1472,10 @@ class Subreddit(Thing, Printable, BaseSite):
             return False
         return len(self.sticky_fullnames) >= self.MAX_STICKIES
 
+    # Configurable home page
+    @property
+    def is_homepage(self):
+        return False
 
 class SubscribedSubredditsByAccount(tdb_cassandra.DenormalizedRelation):
     _use_db = True
@@ -1563,9 +1593,54 @@ class FakeSubreddit(BaseSite):
     def keep_for_rising(self, sr_id):
         return False
 
+    # SaidIt: configurable home page wiki support
+    @property
+    def _base(self):
+        try:
+            return Subreddit._by_name(g.default_sr, stale=True)
+        except NotFound:
+            return None
+
+    def wiki_can_submit(self, user):
+        return True
+
+    @property
+    def wiki_use_subreddit_karma(self):
+        return False
+
     @property
     def _should_wiki(self):
-        return False
+        return True
+
+    @property
+    def wikimode(self):
+        return self._base.wikimode if self._base else "disabled"
+
+    @property
+    def wiki_edit_karma(self):
+        return self._base.wiki_edit_karma
+
+    @property
+    def wiki_edit_age(self):
+        return self._base.wiki_edit_age
+
+    def is_wikicontributor(self, user):
+        return self._base.is_wikicontributor(user)
+
+    def is_wikibanned(self, user):
+        return self._base.is_wikibanned(user)
+
+    def is_wikicreate(self, user):
+        return self._base.is_wikicreate(user)
+
+    @property
+    def _id36(self):
+        return self._base._id36
+
+    @property
+    def type(self):
+        return self._base.type if self._base else "public"
+
 
     @property
     def allow_gilding(self):
@@ -1605,6 +1680,10 @@ class FakeSubreddit(BaseSite):
         raise NotImplementedError()
 
     def spammy(self):
+        return False
+
+    @property
+    def is_homepage(self):
         return False
 
 class FriendsSR(FakeSubreddit):
@@ -1666,11 +1745,80 @@ class FriendsSR(FakeSubreddit):
 
         return get_gilded_users(friends)
 
+# SaidIt: swap home pages with a user preference
+class DynamicSR(FakeSubreddit):
+    analytics_name = ''
+    name = ''
+    path = ''
+    title = g.brander_index_page_title
+    header_title = ''
+
+    def __init__(self, default_sr, friends_sr, mod_sr, all_sr, random_sr, home_sr):
+        self.default_sr = default_sr
+        self.friends_sr = friends_sr
+        self.mod_sr = mod_sr
+        self.all_sr = all_sr
+        self.random_sr = random_sr
+        self.home_sr = home_sr
+
+    # c.user.pref_site_index is only available later in the request, not in set_subreddit() or DynamicSR __init__
+    def init_via_user_pref(self):
+        if c.user.pref_site_index == 'site_index_front':
+            self.analytics_name = g.front_name
+            self.name = g.front_name
+            self.path = g.front_path
+            self.header_title = g.front_header_title
+        elif c.user.pref_site_index == 'site_index_all':
+            self.analytics_name = g.all_name
+            self.name = g.all_name
+            self.path = g.all_path
+            self.header_title = g.all_header_title
+        elif c.user.pref_site_index == 'site_index_home':
+            self.analytics_name = g.home_name
+            self.name = g.home_name
+            self.path = g.home_path
+            self.header_title = g.home_name
+
+    def keep_for_rising(self, sr_id):
+        return True
+
+    def get_links(self, sort, time):
+        self.init_via_user_pref()
+        if c.user.pref_site_index == 'site_index_front':
+            return self.default_sr.get_links(sort, time)
+        elif c.user.pref_site_index == 'site_index_all':
+            return self.all_sr.get_links(sort, time)
+        elif c.user.pref_site_index == 'site_index_home':
+            return self.home_sr.get_links(sort, time)
+
+    def get_all_comments(self):
+        self.init_via_user_pref()
+        if c.user.pref_site_index == 'site_index_front':
+            return self.default_sr.get_all_comments()
+        elif c.user.pref_site_index == 'site_index_all':
+            return self.all_sr.get_all_comments()
+        elif c.user.pref_site_index == 'site_index_home':
+            return self.home_sr.get_all_comments()
+
+    def get_gilded(self):
+        self.init_via_user_pref()
+        if c.user.pref_site_index == 'site_index_front':
+            return self.default_sr.get_gilded()
+        elif c.user.pref_site_index == 'site_index_all':
+            return self.all_sr.get_gilded()
+        elif c.user.pref_site_index == 'site_index_home':
+            return self.home_sr.get_gilded()
+
+    @property
+    def is_homepage(self):
+        return True
 
 class AllSR(FakeSubreddit):
-    name = 'all'
-    title = 'all subreddits'
-    path = '/r/all'
+    name = g.all_name
+    title = g.all_title
+    path = g.all_path
+    header = g.default_header_url
+    header_title = g.all_header_title
 
     def keep_for_rising(self, sr_id):
         return True
@@ -1711,6 +1859,22 @@ class AllSR(FakeSubreddit):
 
         return MergedCachedQuery(qs)
 
+    @property
+    def title(self):
+        return _(g.all_page_title)
+
+    @property
+    def _should_wiki(self):
+        if g.site_index_user_configurable != 'true' and g.site_index == g.all_name:
+            return True
+        return False
+
+    @property
+    def is_homepage(self):
+        if g.site_index_user_configurable != 'true' and g.site_index == g.all_name:
+            return True
+        return False
+
 class AllMinus(AllSR):
     analytics_name = "all"
     name = _("%s (filtered)") % "all"
@@ -1730,16 +1894,89 @@ class AllMinus(AllSR):
 
     @property
     def path(self):
-        return '/r/all-' + '-'.join(sr.name for sr in self.exclude_srs)
+        return '/%s/all-' % g.brander_community_abbr + '-'.join(sr.name for sr in self.exclude_srs)
 
     def get_links(self, sort, time):
         from r2.models import Link
         from r2.lib.db.operators import not_
         q = AllSR.get_links(self, sort, time)
-        if c.user.gold and self.exclude_sr_ids:
+        # CUSTOM: degolding
+        if self.exclude_sr_ids:
             q._filter(not_(Link.c.sr_id.in_(self.exclude_sr_ids)))
         return q
 
+# SaidIt: HomeSR is a filtered All (like AllMinus), according to g.home_exclude_sr_names
+# TODO: add a filtered get_all_comments()
+class HomeSR(AllSR):
+    analytics_name = g.home_name
+    name = g.home_name
+    path = g.home_path
+    title = g.home_page_title
+    header_title = g.home_name
+
+    def __init__(self):
+        AllSR.__init__(self)
+        name_filter = lambda name: Subreddit.is_valid_name(name, allow_language_srs=True)
+        sr_names = filter(name_filter, g.live_config['home_exclude_sr_names'].split(','))
+        exclude_srs = Subreddit._by_name(sr_names, stale=True)
+        self.exclude_sr_ids = [sr._id for sr in exclude_srs.itervalues() if not isinstance(sr, FakeSubreddit)]
+
+    @property
+    def _should_wiki(self):
+        if g.site_index_user_configurable != 'true' and g.site_index == g.home_name:
+            return True
+        return False
+
+    def keep_for_rising(self, sr_id):
+        return sr_id not in self.exclude_sr_ids
+
+    def get_links(self, sort, time):
+        from r2.models import Link
+        from r2.lib.db.operators import not_
+        q = AllSR.get_links(self, sort, time)
+        if self.exclude_sr_ids:
+            q._filter(not_(Link.c.sr_id.in_(self.exclude_sr_ids)))
+        return q
+    @property
+    def is_homepage(self):
+        if g.site_index_user_configurable != 'true' and g.site_index == g.home_name:
+            return True
+        return False
+
+class HomeMinus(HomeSR):
+    analytics_name = g.home_name
+    name = _("%s (filtered)") % g.home_name
+
+    def __init__(self, srs):
+        HomeSR.__init__(self)
+
+        # not including HomeSR's excluded subs in name or path
+        self.exclude_srs = srs
+        self.exclude_sr_ids = [sr._id for sr in srs]
+
+        # but do exclude HomeSR's excluded subs in addition to url supplied subs
+        name_filter = lambda name: Subreddit.is_valid_name(name, allow_language_srs=True)
+        sr_names = filter(name_filter, g.live_config['home_exclude_sr_names'].split(','))
+        home_excluded_srs = Subreddit._by_name(sr_names, stale=True)
+        self.exclude_sr_ids.extend(sr._id for sr in home_excluded_srs.itervalues() if not isinstance(sr, FakeSubreddit))
+        self.exclude_sr_ids = list(set(self.exclude_sr_ids))
+
+    @property
+    def title(self):
+        sr_names = ', '.join(sr.name for sr in self.exclude_srs)
+        return g.home_minus_page_title + ' ' + sr_names
+
+    @property
+    def path(self):
+        return '/%s/%s-' % (g.brander_community_abbr, g.home_name) + '-'.join(sr.name for sr in self.exclude_srs)
+
+    def get_links(self, sort, time):
+        from r2.models import Link
+        from r2.lib.db.operators import not_
+        q = AllSR.get_links(self, sort, time)
+        if self.exclude_sr_ids:
+            q._filter(not_(Link.c.sr_id.in_(self.exclude_sr_ids)))
+        return q
 
 class Filtered(object):
     unfiltered_path = None
@@ -1770,19 +2007,20 @@ class Filtered(object):
 
 
 class AllFiltered(Filtered, AllMinus):
-    unfiltered_path = '/r/all'
+    unfiltered_path = '/%s/all' % g.brander_community_abbr
     filtername = 'all'
 
     def __init__(self):
         filters = self._get_filtered_subreddits() if c.user.gold else []
         AllMinus.__init__(self, filters)
 
-
+# Subscribed
 class _DefaultSR(FakeSubreddit):
-    analytics_name = 'frontpage'
-    #notice the space before reddit.com
-    name = ' reddit.com'
-    path = '/'
+    analytics_name = g.front_name
+    # notice the space before site.com
+    # name = ' ' + g.domain
+    name = g.front_name
+    path = g.front_path
     header = g.default_header_url
 
     def _get_sr_ids(self):
@@ -1803,7 +2041,7 @@ class _DefaultSR(FakeSubreddit):
 
     @property
     def title(self):
-        return _(g.short_description)
+        return _(g.front_page_title)
 
 # This is the base class for the instantiated front page reddit
 class DefaultSR(_DefaultSR):
@@ -1823,7 +2061,9 @@ class DefaultSR(_DefaultSR):
 
     @property
     def _should_wiki(self):
-        return True
+        if g.site_index_user_configurable != 'true' and g.site_index == g.front_name:
+            return True
+        return False
 
     @property
     def wikimode(self):
@@ -1864,7 +2104,8 @@ class DefaultSR(_DefaultSR):
 
     @property
     def header_title(self):
-        return (self._base and self._base.header_title) or ""
+        # return (self._base and self._base.header_title) or ""
+        return g.front_header_title
 
     @property
     def header_size(self):
@@ -1898,6 +2139,12 @@ class DefaultSR(_DefaultSR):
         # '' is for promos targeted to the frontpage
         sr_names = [self.name] + [sr.name for sr in srs]
         return promote.get_live_promotions(sr_names)
+
+    @property
+    def is_homepage(self):
+        if g.site_index_user_configurable != 'true' and g.site_index == g.front_name:
+            return True
+        return False
 
 
 class MultiReddit(FakeSubreddit):
@@ -2284,10 +2531,11 @@ class LabeledMulti(tdb_cassandra.Thing, MultiReddit):
                 'multiname': self.name,
             }
         if isinstance(self.owner, Subreddit):
-            return '/r/%(srname)s/%(kind)s/%(multiname)s' % {
+            return '/%(brander_community_abbr)s/%(srname)s/%(kind)s/%(multiname)s' % {
                 'srname': self.owner.name,
                 'kind': self.kind,
                 'multiname': self.name,
+                'brander_community_abbr': g.brander_community_abbr,
             }
 
     @property
@@ -2424,7 +2672,7 @@ class LabeledMulti(tdb_cassandra.Thing, MultiReddit):
         """Generate user multi path from display name."""
         slug = unicode_title_to_ascii(display_name)
         if isinstance(owner, Subreddit):
-            prefix = "/r/" + owner.name + "/" + type_ + "/"
+            prefix = "/" + g.brander_community_abbr + "/" + owner.name + "/" + type_ + "/"
         else:
             prefix = "/user/" + owner.name + "/" + type_ + "/"
         new_path = prefix + slug
@@ -2567,10 +2815,10 @@ class ModContribSR(MultiReddit):
 
 
 class ModSR(ModContribSR):
-    name  = "subreddits you moderate"
-    title = "subreddits you moderate"
+    name  = "subs you moderate"
+    title = "subs you moderate"
     query_param = "moderator"
-    path = "/r/mod"
+    path = "/%s/mod" % g.brander_community_abbr
 
     def is_moderator(self, user):
         return FakeSRMember(ModeratorPermissionSet)
@@ -2600,11 +2848,11 @@ class ModMinus(ModSR):
 
     @property
     def path(self):
-        return '/r/mod-' + '-'.join(sr.name for sr in self.exclude_srs)
+        return '/' + g.brander_community_abbr + '/mod-' + '-'.join(sr.name for sr in self.exclude_srs)
 
 
 class ModFiltered(Filtered, ModMinus):
-    unfiltered_path = '/r/mod'
+    unfiltered_path = '/%s/mod' % g.brander_community_abbr
     filtername = 'mod'
 
     def __init__(self):
@@ -2615,7 +2863,7 @@ class ContribSR(ModContribSR):
     name  = "contrib"
     title = "communities you're approved on"
     query_param = "contributor"
-    path = "/r/contrib"
+    path = "/%s/contrib" % g.brander_community_abbr
 
 
 class DomainSR(FakeSubreddit):
@@ -2683,6 +2931,8 @@ All = AllSR()
 Random = RandomReddit()
 RandomNSFW = RandomNSFWReddit()
 RandomSubscription = RandomSubscriptionReddit()
+Home = HomeSR()
+Dynamic = DynamicSR(Frontpage, Friends, Mod, All, Random, Home)
 
 # add to _specials so they can be retrieved with Subreddit._by_name, e.g.
 # Subreddit._by_name("all")
@@ -2695,6 +2945,8 @@ Subreddit._specials.update({
         Contrib,
         All,
         Frontpage,
+        # CUSTOM: lets you use route /s/home in addition to /
+        Home,
     )
 })
 
@@ -2912,15 +3164,16 @@ class MutedAccountsBySubreddit(object):
 
         #if the user has interacted with the subreddit before, message them
         if user.has_interacted_with(sr):
-            subject = "You have been muted from r/%(subredditname)s"
-            subject %= dict(subredditname=sr.name)
+            subject = "You have been muted from %(brander_community_abbr)s/%(subredditname)s"
+            subject %= dict(brander_community_abbr=g.brander_community_abbr, subredditname=sr.name)
             message = ("You have been [temporarily muted](%(muting_link)s) "
-                "from r/%(subredditname)s. You will not be able to message "
-                "the moderators of r/%(subredditname)s for %(num_hours)s hours.")
+                "from %(brander_community_abbr)s/%(subredditname)s. You will not be able to message "
+                "the moderators of %(brander_community_abbr)s/%(subredditname)s for %(num_hours)s hours.")
             message %= dict(
                 muting_link="https://reddit.zendesk.com/hc/en-us/articles/205269739",
                 subredditname=sr.name,
                 num_hours=NUM_HOURS,
+                brander_community_abbr=g.brander_community_abbr,
             )
             if parent_message:
                 subject = parent_message.subject

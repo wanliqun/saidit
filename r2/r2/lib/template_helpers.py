@@ -213,6 +213,8 @@ def js_config(extra_config=None):
         events_collector_key = g.secrets['events_collector_js_key']
         events_collector_secret = g.secrets['events_collector_js_secret']
 
+    brander_community_abbr = g.brander_community_abbr
+
     config = {
         # is the user logged in?
         "logged": logged,
@@ -286,6 +288,10 @@ def js_config(extra_config=None):
         "facebook_app_id": g.live_config["facebook_app_id"],
         "feature_new_report_dialog": feature.is_enabled('new_report_dialog'),
         "email_verified": logged and c.user.email and c.user.email_verified,
+
+        # CUSTOM
+        "brander_community_abbr": g.brander_community_abbr,
+        "chat_client_url": g.chat_client_url,
     }
 
     if g.tracker_url:
@@ -400,7 +406,8 @@ def replace_render(listing, item, render_func):
             # replace the score stub
             (replacements['scoredislikes'],
              replacements['scoreunvoted'],
-             replacements['scorelikes'])  = item.render_score
+             replacements['scorelikes'],
+             replacements['scorelikesdislikes'])  = item.render_score
 
         # compute the timesince here so we don't end up caching it
         if hasattr(item, "_date"):
@@ -522,6 +529,10 @@ def add_sr(
         elif c.render_style == 'compact':
             u.set_extension('compact')
 
+        # SaidIt CUSTOM
+        elif c.render_style == g.extension_subdomain_mobile_v2_render_style:
+            u.set_extension(g.extension_subdomain_mobile_v2_render_style)
+
     return u.unparse()
 
 def join_urls(*urls):
@@ -592,7 +603,7 @@ def add_attr(attrs, kind, label=None, link=None, cssclass=None, symbol=None):
         priority = 4
         cssclass = 'admin'
         if not label:
-            label = _('reddit admin, speaking officially')
+            label = _('saidit admin, speaking officially')
     elif kind in ('X', '@'):
         priority = 5
         cssclass = 'gray'
@@ -629,9 +640,9 @@ def add_admin_distinguish(distinguish_attribs_list):
 
 
 def add_moderator_distinguish(distinguish_attribs_list, subreddit):
-    link = '/r/%s/about/moderators' % subreddit.name
-    label = _('moderator of /r/%(reddit)s, speaking officially')
-    label %= {'reddit': subreddit.name}
+    link = '/%s/%s/about/moderators' % (g.brander_community_abbr, subreddit.name)
+    label = _('moderator of /%(brander_community_abbr)s/%(reddit)s, speaking officially')
+    label %= {'reddit': subreddit.name, 'brander_community_abbr': g.brander_community_abbr}
     add_attr(distinguish_attribs_list, 'M', label=label, link=link)
 
 
@@ -675,7 +686,7 @@ def search_url(query, subreddit, restrict_sr="off", sort=None, recent=None, ref=
         url_query["sort"] = sort
     if recent:
         url_query["t"] = recent
-    path = "/r/%s/search?" % subreddit if subreddit else "/search?"
+    path = "/%s/%s/search?" % (g.brander_community_abbr, subreddit) if subreddit else "/search?"
     path += urllib.urlencode(url_query)
     return path
 

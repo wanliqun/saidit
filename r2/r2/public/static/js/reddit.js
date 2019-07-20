@@ -775,7 +775,9 @@ function reply(elem) {
       $(window).off('beforeunload');
       form.hide();
     };
-    $(e.target).thing().find(".showreplies:visible").click();
+	// BUGFIX
+	// $(e.target).thing().find(".showreplies:visible").click();
+    $(elem.target).thing().find(".showreplies:visible").click();
     return false;
 }
 
@@ -884,6 +886,21 @@ function big_mod_toggle(el, press_action, unpress_action) {
     }, null, true)
     return false
 }
+
+/* CUSTOM: Site Theme */
+function lightswitch() {
+    if ($('body').hasClass('theme-nightmode')) {
+        $('.pref-lightswitch').addClass('pref-lightswitch-on').removeClass('pref-lightswitch-off').text('lights off');
+        $('body').addClass('theme-daymode').removeClass('theme-nightmode');
+        if (document.querySelector(".chat-iframe")) { document.querySelector(".chat-iframe").contentWindow.postMessage({type: "set_theme", message: "light"}, r.config.chat_client_url); }
+        $.request("lightswitch", {"lightswitch": true});
+    }  else if ($('body').hasClass('theme-daymode')) {
+        $('.pref-lightswitch').addClass('pref-lightswitch-off').removeClass('pref-lightswitch-on').text('lights on');
+        $('body').addClass('theme-nightmode').removeClass('theme-daymode');
+        if (document.querySelector(".chat-iframe")) { document.querySelector(".chat-iframe").contentWindow.postMessage({type: "set_theme", message: "dark"}, r.config.chat_client_url); }
+        $.request("lightswitch", {"lightswitch": false});
+    }
+};
 
 /* The ready method */
 $(function() {

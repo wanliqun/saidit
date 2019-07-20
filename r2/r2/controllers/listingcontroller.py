@@ -108,6 +108,9 @@ class ListingController(RedditController):
     render_params = {}
     extra_page_classes = ['listing-page']
 
+    # SaidIt: configurable home page
+    sr_path = True
+
     @property
     def menus(self):
         """list of menus underneat the header (e.g., sort, time, kind,
@@ -149,7 +152,7 @@ class ListingController(RedditController):
                                page_classes=self.extra_page_classes,
                                show_sidebar=self.show_sidebar,
                                show_chooser=self.show_chooser,
-                               show_newsletterbar=True,
+                               show_newsletterbar=False,
                                nav_menus=self.menus,
                                title=self.title(),
                                infotext=self.infotext,
@@ -198,9 +201,14 @@ class ListingController(RedditController):
         def keep(item):
             wouldkeep = item.keep_item(item)
 
-            if isinstance(c.site, AllSR):
-                if not item.subreddit.discoverable:
+            # SaidIt: support alternate home pages
+            # Distinguish between subs and links when checking discoverable
+            if isinstance(c.site, (HomeSR, AllSR)) or (isinstance(c.site, DynamicSR) and (c.site.name == g.home_name or c.site.name == g.all_name)):
+                if hasattr(item, 'subreddit') and not item.subreddit.discoverable:
                     return False
+                elif hasattr(item, 'discoverable') and not item.discoverable:
+                    return False
+
             elif isinstance(c.site, FriendsSR):
                 if item.author._deleted or item.author._spam:
                     return False
@@ -230,7 +238,8 @@ class ListingController(RedditController):
         if c.render_style == "html" and self.next_suggestions_cls:
             suggestions = self.next_suggestions_cls()
 
-        pane = model.listing(next_suggestions=suggestions)
+        # SaidIt: configurable home page, pass along sr_path
+        pane = model.listing(next_suggestions=suggestions, sr_path=self.sr_path)
 
         # Indicate that the comment tree wasn't built for comments
         for i in pane:
@@ -273,7 +282,7 @@ class SubredditListingController(ListingController):
     private_referrer = False
 
     def _build_og_title(self, max_length=256):
-        sr_fragment = "/r/" + c.site.name
+        sr_fragment = "/" + g.brander_community_abbr + "/" + c.site.name
         title = c.site.title.strip()
         if not title:
             return trunc_string(sr_fragment, max_length)
@@ -321,13 +330,13 @@ class SubredditListingController(ListingController):
     def render_params(self):
         render_params = {}
 
-        if isinstance(c.site, DefaultSR):
+        if c.site.is_homepage:
             render_params.update({'show_locationbar': True})
         else:
             if not c.user_is_loggedin:
                 # This data is only for scrapers, which shouldn't be logged in.
                 twitter_card = {
-                    "site": "reddit",
+                    "site": g.brander_site,
                     "card": "summary",
                     "title": self._build_og_title(max_length=70),
                     # Twitter will fall back to any defined OpenGraph
@@ -339,7 +348,7 @@ class SubredditListingController(ListingController):
 
                 render_params.update({
                     "og_data": {
-                        "site_name": "reddit",
+                        "site_name": g.brander_site,
                         "title": self._build_og_title(),
                         "image": static('icon.png', absolute=True),
                         "description": self._build_og_description(),
@@ -414,7 +423,7 @@ class ListingWithPromos(SubredditListingController):
 
         show_promo = False
         keywords = []
-        can_show_promo = not c.user.pref_hide_ads or not c.user.gold and c.site.allow_ads
+        can_show_promo = 0
         try_show_promo = ((c.user_is_loggedin and random.random() > 0.5) or
                           not c.user_is_loggedin)
 
@@ -457,7 +466,8 @@ class ListingWithPromos(SubredditListingController):
             spotlight = None
             show_sponsors = not c.user.pref_hide_ads or not c.user.gold
             show_organic = self.show_organic and c.user.pref_organic
-            on_frontpage = isinstance(c.site, DefaultSR)
+
+            on_frontpage = c.site.is_homepage
             requested_ad = request.GET.get('ad')
 
             if on_frontpage:
@@ -482,7 +492,7 @@ class ListingWithPromos(SubredditListingController):
 class HotController(ListingWithPromos):
     where = 'hot'
     extra_page_classes = ListingController.extra_page_classes + ['hot-page']
-    show_chooser = True
+    show_chooser = False
     next_suggestions_cls = ListingSuggestions
     show_organic = True
 
@@ -614,6 +624,9 @@ class RisingController(NewController):
 
         return get_rising(c.site)
 
+
+
+
 class BrowseController(ListingWithPromos):
     where = 'browse'
     show_chooser = True
@@ -623,9 +636,9 @@ class BrowseController(ListingWithPromos):
         """For merged time-listings, don't show items that are too old
            (this can happen when mr_top hasn't run in a while)"""
         if self.time != 'all' and c.default_sr:
-            oldest = timeago('1 %s' % (str(self.time),))
+            oldest = utils.timeago('1 %s' % (str(self.time),))
             def keep(item):
-                if isinstance(c.site, AllSR):
+                if isinstance(c.site, (HomeSR, AllSR)) or (isinstance(c.site, DynamicSR) and (c.site.name == g.home_name or c.site.name == g.all_name)):
                     if not item.subreddit.discoverable:
                         return False
                 return item._date > oldest and item.keep_item(item)
@@ -650,7 +663,7 @@ class BrowseController(ListingWithPromos):
 
     @require_oauth2_scope("read")
     @validate(t = VMenu('sort', ControversyTimeMenu))
-    @listing_api_doc(uri='/{sort}', uri_variants=['/top', '/controversial'],
+    @listing_api_doc(uri='/{sort}', uri_variants=['/top', '/' + g.voting_upvote_path, '/' + g.voting_controversial_path],
                      uses_site=True)
     def GET_listing(self, sort, t, **env):
         self.sort = sort
@@ -658,10 +671,16 @@ class BrowseController(ListingWithPromos):
             self.title_text = _('top scoring links')
             self.extra_page_classes = \
                 self.extra_page_classes + ['top-page']
-        elif sort == 'controversial':
-            self.title_text = _('most controversial links')
+
+        elif sort == g.voting_upvote_path:
+            self.title_text = _('most ' + g.voting_upvote_name + ' links')
             self.extra_page_classes = \
-                self.extra_page_classes + ['controversial-page']
+                self.extra_page_classes + [g.voting_upvote_path + '-page']
+
+        elif sort == g.voting_controversial_path:
+            self.title_text = _('most ' + g.voting_controversial_name + ' links')
+            self.extra_page_classes = \
+                self.extra_page_classes + [g.voting_controversial_path + '-page']
         else:
             # 'sort' is forced to top/controversial by routing.py,
             # but in case something has gone wrong...
@@ -1022,6 +1041,9 @@ class UserController(ListingController):
         if vuser.pref_hide_from_robots:
             self.robots = 'noindex,nofollow'
 
+        # SaidIt: configurable home page: /user is never a sr_path
+        self.sr_path = False
+
         return ListingController.GET_listing(self, **env)
 
     @property
@@ -1107,12 +1129,12 @@ class MessageController(ListingController):
     def menus(self):
         if c.default_sr and self.where in ('inbox', 'messages', 'comments',
                           'selfreply', 'unread', 'mentions'):
-            buttons = [NavButton(_("all"), "inbox"),
-                       NavButton(_("unread"), "unread"),
-                       NavButton(plurals.messages, "messages"),
-                       NavButton(_("comment replies"), 'comments'),
-                       NavButton(_("post replies"), 'selfreply'),
-                       NavButton(_("username mentions"), "mentions"),
+            buttons = [NavButton(_("all"), "inbox", sr_path=False),
+                       NavButton(_("unread"), "unread", sr_path=False),
+                       NavButton(plurals.messages, "messages", sr_path=False),
+                       NavButton(_("comment replies"), 'comments', sr_path=False),
+                       NavButton(_("post replies"), 'selfreply', sr_path=False),
+                       NavButton(_("username mentions"), "mentions", sr_path=False),
             ]
 
             return [NavMenu(buttons, base_path = '/message/',
@@ -1459,7 +1481,7 @@ class RedditsController(ListingController):
     extra_page_classes = ListingController.extra_page_classes + ['subreddits-page']
 
     def title(self):
-        return _('subreddits')
+        return _('%s: %s %s' % (g.brander_site, self.where, g.brander_community_plural))
 
     def keep_fn(self):
         base_keep_fn = ListingController.keep_fn(self)
@@ -1569,12 +1591,12 @@ class RedditsController(ListingController):
 
     @require_oauth2_scope("read")
     @listing_api_doc(section=api_section.subreddits,
-                     uri='/subreddits/{where}',
+                     uri='/subs/{where}',
                      uri_variants=[
-                         '/subreddits/popular',
-                         '/subreddits/new',
-                         '/subreddits/gold',
-                         '/subreddits/default',
+                         '/subs/popular',
+                         '/subs/new',
+                         '/subs/gold',
+                         '/subs/default',
                      ])
     def GET_listing(self, where, **env):
         """Get all subreddits.
@@ -1586,6 +1608,8 @@ class RedditsController(ListingController):
 
         """
         self.where = where
+        # SaidIt: configurable home page: /subs is never a sr_path
+        self.sr_path = False
         return ListingController.GET_listing(self, **env)
 
 class MyredditsController(ListingController):
@@ -1594,15 +1618,15 @@ class MyredditsController(ListingController):
 
     @property
     def menus(self):
-        buttons = (NavButton(plurals.subscriber,  'subscriber'),
-                    NavButton(getattr(plurals, "approved submitter"), 'contributor'),
-                    NavButton(plurals.moderator,   'moderator'))
+        buttons = (NavButton(plurals.subscriber,  'subscriber', sr_path=False),
+                    NavButton(getattr(plurals, "approved submitter"), 'contributor', sr_path=False),
+                    NavButton(plurals.moderator,   'moderator', sr_path=False))
 
-        return [NavMenu(buttons, base_path = '/subreddits/mine/',
+        return [NavMenu(buttons, base_path = '/subs/mine/',
                         default = 'subscriber', type = "flatlist")]
 
     def title(self):
-        return _('subreddits: ') + self.where
+        return _('%s: my %s: %s' % (g.brander_site, g.brander_community_plural, self.where))
 
     def builder_wrapper(self, thing):
         w = ListingController.builder_wrapper(thing)
@@ -1639,7 +1663,10 @@ class MyredditsController(ListingController):
         if self.where == 'subscriber' and num_subscriptions == 0:
             message = strings.sr_messages['empty']
         else:
-            message = strings.sr_messages.get(self.where)
+            message = strings.sr_messages.get(self.where) % {
+                    'community_plural': g.brander_community_plural,
+                    'unsubscribe_link': '/prefs#subscriptions',
+                }
 
         stack = PaneStack()
 
@@ -1677,8 +1704,8 @@ class MyredditsController(ListingController):
     @require_oauth2_scope("mysubreddits")
     @validate(VUser())
     @listing_api_doc(section=api_section.subreddits,
-                     uri='/subreddits/mine/{where}',
-                     uri_variants=['/subreddits/mine/subscriber', '/subreddits/mine/contributor', '/subreddits/mine/moderator'])
+                     uri='/subs/mine/{where}',
+                     uri_variants=['/subs/mine/subscriber', '/subs/mine/contributor', '/subs/mine/moderator'])
     def GET_listing(self, where='subscriber', **env):
         """Get subreddits the user has a relationship with.
 
@@ -1694,6 +1721,8 @@ class MyredditsController(ListingController):
 
         """
         self.where = where
+        # SaidIt: configurable home page: /subs/mine is never a sr_path
+        self.sr_path = False
         return ListingController.GET_listing(self, **env)
 
 
@@ -1732,6 +1761,23 @@ class CommentsController(SubredditListingController):
         c.profilepage = True
         self.suppress_reply_buttons = True
         return ListingController.GET_listing(self, **env)
+
+
+class NewCommentsController(SubredditListingController):
+    where = 'newcomments'
+    title_text = _('new comments on posts')
+    extra_page_classes = ListingController.extra_page_classes + ['new-page']
+
+    def query(self):
+        return c.site.get_all_comments()
+
+    @require_oauth2_scope("read")
+    def GET_listing(self, **env):
+        c.profilepage = True
+        self.suppress_reply_buttons = False
+        return ListingController.GET_listing(self, **env)
+
+
 
 
 class UserListListingController(ListingController):
@@ -1793,9 +1839,10 @@ class UserListListingController(ListingController):
         # having this suffix, to make similar tabs on different subreddits
         # distinct.
         if self.where == 'moderators':
-            return '%(section)s - /r/%(subreddit)s' % {
+            return '%(section)s - /%(brander_community_abbr)s/%(subreddit)s' % {
                 'section': section_title,
                 'subreddit': c.site.name,
+                'brander_community_abbr': g.brander_community_abbr,
             }
 
         return section_title

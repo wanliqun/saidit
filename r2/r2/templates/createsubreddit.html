@@ -32,12 +32,12 @@
 <%namespace file="printablebuttons.html" import="toggle_button, simple_button" />
 
 <%namespace name="utils" file="utils.html"/>
- 
+
 %if not thing.site and not c.user.can_create_subreddit:
 <div class="infobar">${_md("""
-# your account is too new to create a subreddit
-    
-try participating in other communities on reddit for a little while first before creating your own. please post to /r/help if you need more information about this restriction, or if you require a specific exemption you can [contact the admins](/contact) to request one.
+# Can't create sub, your account is too new or you created a sub too recently. 
+
+There is a 2 week delay to create a sub after creating an account. Also there is an additional 1 week delay after each new sub created. Post to /s/help if you need more information regarding this restriction.
 """)}</div>
 %else:
 
@@ -96,7 +96,7 @@ try participating in other communities on reddit for a little while first before
   </%utils:line_field>
 
   <%utils:line_field title="${_('sidebar')}" css_class="usertext"
-                     description="${_('shown in the sidebar of your subreddit. 5120 characters max.')}">
+                     description="${_('shown in the sidebar of your sub. 5120 characters max.')}">
     %if thing.site and thing.site.description:
      ${UserText(None, text=thing.site.description or "", editable=True, creating=True, name="description", have_form=False)}
     %else:
@@ -144,35 +144,39 @@ try participating in other communities on reddit for a little while first before
                            is_archived)}
       %endif
 
-      <% is_gold_restricted = thing.site and thing.site.type == 'gold_restricted' %>
-      %if c.user_is_admin or is_gold_restricted:
-        ${utils.radio_type('type', "gold_restricted", _("gold restricted"),
-                           _("anyone can view, but only reddit gold members can submit or comment"),
-                           is_gold_restricted)}
+      %if g.gold_gilding_enabled == 'true':
+        <% is_gold_restricted = thing.site and thing.site.type == 'gold_restricted' %>
+        %if c.user_is_admin or is_gold_restricted:
+          ${utils.radio_type('type', "gold_restricted", _("gold restricted"),
+                             _("anyone can view, but only gold members can submit or comment"),
+                             is_gold_restricted)}
+        %endif
       %endif
 
       <% is_employees_only = thing.site and thing.site.type == 'employees_only' %>
       %if c.user.employee:
         ${utils.radio_type('type', "employees_only", _("employees only"),
-                           _("only reddit employees can view; the employee list is pulled from live config"),
+                           _("only saidit employees can view; the employee list is pulled from live config"),
                            is_employees_only)}
       %endif
 
-      <% 
-          is_gold_only = thing.site and thing.site.type == 'gold_only'
-          can_set_gold_only = (is_gold_only or c.user_is_admin or
-                  (not thing.site and (c.user.gold or c.user.gold_charter)))
-          if is_gold_only:
-              hover_title = "[!]"
-              hover_text = _('If you switch this subreddit to another type, you will not be able to switch back to "gold only" without the assistance of an admin')
-          else:
-              hover_title = "[?]"
-              hover_text = unsafe(capture(_md, 'BETA: Subreddits can be created as "gold only" during creation by a user that has gold. You can find more info about this feature [here](/gold/about#gold-only-subreddits)'))
-      %>
-      ${utils.radio_type('type', "gold_only", _("gold only"),
-              _("only reddit gold members can view and submit"),
-              checked=is_gold_only, disabled=not can_set_gold_only, hover_title=hover_title,
-              hover_text=hover_text)}
+      %if g.gold_gilding_enabled == 'true':
+        <%
+            is_gold_only = thing.site and thing.site.type == 'gold_only'
+            can_set_gold_only = (is_gold_only or c.user_is_admin or
+                    (not thing.site and (c.user.gold or c.user.gold_charter)))
+            if is_gold_only:
+                hover_title = "[!]"
+                hover_text = _('If you switch this sub to another type, you will not be able to switch back to "gold only" without the assistance of an admin')
+            else:
+                hover_title = "[?]"
+                hover_text = unsafe(capture(_md, 'BETA: Subs can be created as "gold only" during creation by a user that has gold. You can find more info about this feature [here](/gold/about#gold-only-subreddits)'))
+        %>
+        ${utils.radio_type('type', "gold_only", _("gold only"),
+                _("only gold members can view and submit"),
+                checked=is_gold_only, disabled=not can_set_gold_only, hover_title=hover_title,
+                hover_text=hover_text)}
+      %endif
       </table>
       ${error_field("INVALID_OPTION", "type")}
       ${error_field("ADMIN_REQUIRED", "type")}
@@ -225,16 +229,16 @@ try participating in other communities on reddit for a little while first before
                            _("Only mods, approved wiki contributors, or those on a page's edit list may edit"),
                            (thing.site and thing.site.wikimode == 'modonly'))}
         ${utils.radio_type('wikimode', "anyone", _("anyone"),
-                           _("Anyone who can submit to the subreddit may edit"),
+                           _("Anyone who can submit to the sub may edit"),
                            (thing.site and thing.site.wikimode == 'anyone'))}
       </table>
       ${error_field("INVALID_OPTION", "wikimode")}
     </div>
     <div class="usertext-edit">
     <div class="delete-field">
-    <label for="wiki_edit_karma">${_('Subreddit karma required to edit and create wiki pages:')}</label>
+    <label for="wiki_edit_karma">${_('Sub karma required to edit and create wiki pages:')}</label>
         %if thing.site:
-            <input id="wiki_edit_karma" type="text" name="wiki_edit_karma" 
+            <input id="wiki_edit_karma" type="text" name="wiki_edit_karma"
                    value="${thing.site.wiki_edit_karma}"/>
         %else:
             <input id="wiki_edit_karma" type="text" name="wiki_edit_karma" value="100" />
@@ -244,7 +248,7 @@ try participating in other communities on reddit for a little while first before
     <div class="delete-field">
     <label for="wiki_edit_age">${_('Account age (days) required to edit and create wiki pages:')}</label>
         %if thing.site:
-            <input id="wiki_edit_age" type="text" name="wiki_edit_age" 
+            <input id="wiki_edit_age" type="text" name="wiki_edit_age"
                    value="${thing.site.wiki_edit_age}"/>
         %else:
             <input id="wiki_edit_age" type="text" name="wiki_edit_age" value="0" />
@@ -253,7 +257,7 @@ try participating in other communities on reddit for a little while first before
     </div>
     </div>
   </%utils:line_field>
-  
+
   <%utils:line_field title="${_('spam filter strength')}">
   	<div class="delete-field">
         <p class="little gray">${_("high is the standard filter, low disables most filtering, all will filter every post initially and they will need to be approved manually to be visible.")}</p>
@@ -318,13 +322,13 @@ try participating in other communities on reddit for a little while first before
                  %endif
           >
           <label for="allow_top">
-            ${_("allow this subreddit to be included /r/all as well as the default and trending lists")}
+            ${_("allow this sub to be included in /" + g.brander_community_abbr + "/all as well as the default and trending lists")}
           </label>
         </li>
         <li>
           <input class="nomargin" type="checkbox"
                  name="show_media" id="show_media"
-                 %if thing.site and thing.site.show_media:
+                 %if not thing.site or thing.site.show_media:
                    checked="checked"
                  %endif
           >
@@ -336,7 +340,7 @@ try participating in other communities on reddit for a little while first before
           <li>
             <input class="nomargin" type="checkbox"
                    name="show_media_preview" id="show_media_preview"
-                   %if thing.site and thing.site.show_media_preview:
+                   %if not thing.site or thing.site.show_media_preview:
                      checked="checked"
                    %endif
             >
@@ -360,7 +364,10 @@ try participating in other communities on reddit for a little while first before
         <li>
           <input class="nomargin" type="checkbox"
                  name="public_traffic" id="public_traffic"
-                 ${thing.site and thing.site.public_traffic and "checked='checked'" or ""}>
+                 %if not thing.site or thing.site.public_traffic:
+                   checked="checked"
+                 %endif
+          >
           <label for="public_traffic">
             ${_("make the traffic stats page available to everyone")}
           </label>
@@ -385,7 +392,7 @@ try participating in other communities on reddit for a little while first before
                    %endif
             >
             <label class="buygold" for="hide_ads">
-              ${_("hide ads (only available for gold only subreddits)")}
+              ${_("hide ads (only available for gold only subs)")}
             </label>
           </li>
         %endif
@@ -394,7 +401,7 @@ try participating in other communities on reddit for a little while first before
       <div class="usertext-edit">
         <label for="suggested_comment_sort">${_('suggested comment sort')}&#32;<span class="gray">${_('(all comment threads will use this sorting method by default)')}</span></label>
         <select class="nomargin" name="suggested_comment_sort" id="suggested_comment_sort">
-           <option value="">${_('none (recommended for most subreddits)')}</option>
+           <option value="">${_('none (recommended for most subs)')}</option>
            %for sort in thing.comment_sorts:
              <option ${'selected="selected"' if thing.site and sort == thing.site.suggested_comment_sort else ''} value="${sort}">${getattr(menu, sort, sort)}</option>
            %endfor
@@ -405,7 +412,7 @@ try participating in other communities on reddit for a little while first before
       <div class="delete-field">
         <label for="comment_score_hide_mins">${_('Minutes to hide comment scores:')}</label>
             %if thing.site:
-                <input id="comment_score_hide_mins" type="text" name="comment_score_hide_mins" placeholder="0" 
+                <input id="comment_score_hide_mins" type="text" name="comment_score_hide_mins" placeholder="0"
                        value="${thing.site.comment_score_hide_mins}" />
             %else:
                 <input id="comment_score_hide_mins" type="text" name="comment_score_hide_mins" value="0" placeholder="0" />
@@ -429,7 +436,7 @@ try participating in other communities on reddit for a little while first before
             "helpon", "helpoff")}
       </div>
       <div class="infobar markhelp md" style="display: none">
-        ${_("Own a domain?  Enter it here and then go to your DNS provider and add a CNAME record aliasing your domain to rhs.reddit.com. You will be able to access your reddit through your domain.")}
+        ${_("Own a domain?  Enter it here and then go to your DNS provider and add a CNAME record aliasing your domain to it. You will be able to access your saidit through your domain.")}
       </div>
     </div>
   </%utils:line_field>
@@ -453,7 +460,7 @@ try participating in other communities on reddit for a little while first before
                    />
           </li>
           <li>
-            <%utils:image_upload post_target="/api/upload_sr_img" 
+            <%utils:image_upload post_target="/api/upload_sr_img"
                                  current_image="${thing.site.header}"
                                  label="${_('upload header image')}"
                                  ask_type="${True}">
@@ -467,9 +474,9 @@ try participating in other communities on reddit for a little while first before
               </button>
               <div class="clearleft"></div>
               <input type="hidden" name="uh" value="${c.modhash}" />
-              <input type="hidden" name="r"  value="${c.site.name}" />
+              <input type="hidden" name="${g.brander_community_abbr}"  value="${c.site.name}" />
               <input type="hidden" name="header" value="1" />
-    
+
               <script type="text/javascript">
                 function on_image_success(img) {
                    $("#header-img").log().attr("src", img.attr("src"));
@@ -485,7 +492,7 @@ try participating in other communities on reddit for a little while first before
 %if thing.site and feature.is_enabled('related_subreddits'):
   <%utils:line_field title="${_('related subreddits')}">
     <div class="delete-field">
-      <p class="little gray">${_('similar or related subreddits.')}</p>
+      <p class="little gray">${_('similar or related subs.')}</p>
       <ul id="related-srs" class="subreddits">
         <li id="sr-template" style="display:none">
           <a href=""></a>
@@ -494,7 +501,7 @@ try participating in other communities on reddit for a little while first before
         %for sr in thing.site.related_subreddits:
           %if sr:
             <li data-name="${sr.lower()}">
-              <a href="/r/${sr}">/r/${sr}</a>
+              <a href="/${g.brander_community_abbr}/${sr}">/${g.brander_community_abbr}/${sr}</a>
               <button class="remove-sr" onclick="remove_related_sr(this.parentNode)">${_('remove')}</button>
             </li>
           %endif
@@ -520,7 +527,7 @@ try participating in other communities on reddit for a little while first before
             $.post('/api/search_reddit_names.json', { query: sr_name, exact: true }, 'json')
             .done(function(r) {
               var sr_name = r.names[0];
-              var sr_path = '/r/' + sr_name;
+              var sr_path = '/${g.brander_community_abbr}/' + sr_name;
 
               var $sr_list = $('#related-srs');
               var $sr_item = $sr_list.find('[data-name=' + sr_name.toLowerCase() + ']');
@@ -538,7 +545,7 @@ try participating in other communities on reddit for a little while first before
               $('#sr-autocomplete').val('');
             })
             .fail(function() {
-              $('.SUBREDDIT_NOEXIST.field-sr').text(r._("that subreddit doesn't exist")).show();
+              $('.SUBREDDIT_NOEXIST.field-sr').text(r._("that sub doesn't exist")).show();
             });
           }
 
@@ -578,7 +585,7 @@ try participating in other communities on reddit for a little while first before
           </button>
           <div class="clearleft"></div>
           <input type="hidden" name="uh" value="${c.modhash}">
-          <input type="hidden" name="r"  value="${c.site.name}">
+          <input type="hidden" name="${g.brander_community_abbr}"  value="${c.site.name}">
           <input type="hidden" name="upload_type" value="icon">
         </%utils:image_upload>
       </li>
@@ -597,13 +604,13 @@ try participating in other communities on reddit for a little while first before
           </button>
           <div class="clearleft"></div>
           <input type="hidden" name="uh" value="${c.modhash}">
-          <input type="hidden" name="r"  value="${c.site.name}">
+          <input type="hidden" name="${g.brander_community_abbr}"  value="${c.site.name}">
           <input type="hidden" name="upload_type" value="banner">
         </%utils:image_upload>
       </li>
       %endif
       <li>
-        <p><label>${_('color')}</label> <span class="gray">${_('used as a thematic color for your subreddit on mobile')}</span></p>
+        <p><label>${_('color')}</label> <span class="gray">${_('used as a thematic color for your sub on mobile')}</span></p>
         <ul class="colors">
           %for color, color_name in thing.color_options.iteritems():
             %if color:
@@ -623,6 +630,32 @@ try participating in other communities on reddit for a little while first before
         </ul>
       </li>
     </ul>
+  </%utils:line_field>
+%endif
+
+### CUSTOM
+% if feature.is_enabled('chat'):
+  <%utils:line_field title="${_('chat')}">
+    <div class="delete-field">
+      <ul>
+        <li>
+          <%
+            checked = False
+            if thing.site and thing.site.chat_enabled:
+              checked = True
+            elif not thing.site:
+              ## new sub case
+              checked = True
+          %>
+          <input class="nomargin" type="checkbox"
+                 name="chat_enabled" id="chat_enabled"
+                 ${"checked='checked'" if checked else ""}>
+          <label for="chat_enabled">
+            ${_("Enable Chat")}&#32;&#32;<span class="gray">${_("Add sidebar chat, allow chat posts and chat comments")}</span>
+          </label>
+        </li>
+      </ul>
+    </div>
   </%utils:line_field>
 %endif
 

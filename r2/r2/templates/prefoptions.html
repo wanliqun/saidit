@@ -24,6 +24,15 @@
    from r2.config import feature
    from r2.lib.errors import error_list
    from r2.lib.menus import CommentSortMenu
+
+   ## CUSTOM
+   from r2.lib.menus import (
+    ChatSidebarSizeMenu,
+    SubscriptionsSubscribeMenu,
+    SiteThemeMenu,
+    SiteIndexMenu
+    )
+
    from r2.lib.template_helpers import add_sr, _wsf, format_html, make_url_protocol_relative
    from r2.lib.utils import UrlParser
    import random
@@ -69,16 +78,18 @@
   </select>
 </%def>
 
+
+
 <%def name="media_radio(val, label)">
-  <input id="media_${val}" class="nomargin" 
+  <input id="media_${val}" class="nomargin"
          type="radio"  value="${val}" name="media"
-         ${"checked='checked'" if c.user.pref_media == val else ''} /> 
+         ${"checked='checked'" if c.user.pref_media == val else ''} />
   <label for="media_${val}">${label}</label>
   <br/>
 </%def>
 
 <%def name="media_preview_radio(val, label)">
-  <input id="media_preview_${val}" class="nomargin" 
+  <input id="media_preview_${val}" class="nomargin"
          type="radio"  value="${val}" name="media_preview"
          ${"checked='checked'" if c.user.pref_media_preview == val else ''}>
   <label for="media_preview_${val}">${label}</label>
@@ -95,6 +106,38 @@
          name="${name}" value="${s if s is not None else ''}">
 </%def>
 
+## SaidIt: text_input with more params
+<%def name="text_input_all(s, name, size, disabled)">
+  <input type="text" class="text" size="${size}" maxlength="${size}"
+         name="${name}" value="${s if s is not None else ''}" ${"disabled='disabled'" if disabled else ""} ${"style='width:auto'" if size and size > 20 else ""}>
+</%def>
+
+## SaidIt: site theme
+<%def name="site_theme_sort_options()">
+  <% menu = SiteThemeMenu() %>
+  <select name="site_theme">
+        %for sort in menu._options:
+        <option ${'selected="selected"' if sort == c.user.pref_site_theme else ""}
+                value="${sort}">
+          ${menu.make_title(sort)}&#32;${_('(default)') if sort == menu._default else ''}
+        </option>
+        %endfor
+  </select>
+</%def>
+
+## SaidIt: site index
+<%def name="site_index_sort_options()">
+  <% menu = SiteIndexMenu() %>
+  <select name="site_index">
+        %for sort in menu._options:
+        <option ${'selected="selected"' if sort == c.user.pref_site_index else ""}
+                value="${sort}">
+          ${menu.make_title(sort)}&#32;${_('(default)') if sort == menu._default else ''}
+        </option>
+        %endfor
+  </select>
+</%def>
+
 %if c.user_is_loggedin:
   %if thing.done:
     <p class="green">${_("your preferences have been updated")}</p>
@@ -107,9 +150,9 @@
 
 <%
    if c.user_is_loggedin:
-       action = "/post/options" 
+       action = "/post/options"
    else:
-       action = "/post/unlogged_options" 
+       action = "/post/unlogged_options"
    action = add_sr(action, sr_path=False)
  %>
 <form action="${action}" method="post" class="pretty-form short-text">
@@ -121,7 +164,7 @@
       ${language_tool(allow_blank = False, show_regions = True,
                       default_lang = c.user.pref_lang)}
       &#32;<span class="details hover">(*) ${_("incomplete")}
-      &#32;<a href="https://www.reddit.com/r/i18n/wiki/getting_started">${_("volunteer to translate")}</a></span>
+    </span>
     </td>
   </tr>
 
@@ -130,7 +173,7 @@
     <tr>
       <th>${_("location options")}</th>
       <td class="prefright">
-        ${checkbox(_("use the global default subreddits for my front page"), "use_global_defaults")}
+        ${checkbox(_("use the global default subs for my front page"), "use_global_defaults")}
         <br/>
         ${checkbox(_("hide the location information bar"), "hide_locationbar")}
       </td>
@@ -156,7 +199,7 @@
       %if not c.user.pref_compress:
         ${media_radio("on", _("show thumbnails next to links"))}
         ${media_radio("off", _("don't show thumbnails next to links"))}
-        ${media_radio("subreddit", _("show thumbnails based on that subreddit's media preferences"))}
+        ${media_radio("subreddit", _("show thumbnails based on that sub's media preferences"))}
       %else:
         <p class="error">${_("to enable thumbnails, disable compressed link display")}</p>
         <input type="hidden" name="media" value="${c.user.pref_media}"/>
@@ -167,7 +210,7 @@
         <h6>${_("media previews")}</h6>
         ${media_preview_radio("on", _("auto-expand media previews"))}
         ${media_preview_radio("off", _("don't auto-expand media previews on comments pages"))}
-        ${media_preview_radio("subreddit", _("expand media previews based on that subreddit's media preferences"))}
+        ${media_preview_radio("subreddit", _("expand media previews based on that sub's media preferences"))}
         <br>
 
         <h6>${_("NSFW content")}</h6>
@@ -187,7 +230,7 @@
   <tr>
     <th>${_("link options")}</th>
     <td class="prefright">
-      <p>
+ <!--      <p>
         ${checkbox(_("show the spotlight box on the front page"), "organic")}
         &#32;
         <span class="details">
@@ -209,12 +252,12 @@
         <span class="details">
           ${_("(such as the source subreddit or the content author's url/name)")}
         </span>
-      </p>
-      <p>${checkbox(_("don't show me submissions after I've upvoted them"), "hide_ups")}
+      </p> -->
+      <p>${checkbox(_("don't show me submissions after I've voted them " + g.voting_upvote_name), "hide_ups")}
          &#32;
          <span class="details">${_("(except my own)")}</span>
       </p>
-      <p>${checkbox(_("don't show me submissions after I've downvoted them"), "hide_downs")}
+      <p>${checkbox(_("don't show me submissions after I've voted them " + g.voting_controversial_name), "hide_downs")}
          &#32;
          <span class="details">${_("(except my own)")}</span>
       </p>
@@ -225,10 +268,10 @@
          input = unsafe(capture(num_input, c.user.pref_min_link_score,
          'min_link_score'))
          %>
-      <p>
+<!--       <p>
       ${_wsf("don't show me submissions with a score less than %(num)s", num=input)}
       &#32;<span class="details">${_("(leave blank to show all submissions)")}</span>
-      </p>
+      </p> -->
     </td>
   </tr>
   <tr>
@@ -239,22 +282,26 @@
     </p>
     <p>
     ${checkbox(_(u"ignore suggested sorts"), "ignore_suggested_sort")}
-    &#32;<span class="details">${_("(suggested sorts may be set by community moderators for specific threads or subreddits, like Q&As)")}</span>
+    &#32;<span class="details">${_("(suggested sorts may be set by community moderators for specific threads or subs, like Q&As)")}</span>
     </p>
+
+    % if g.voting_disable_dagger == 'false':
     <p>
     ${checkbox(_(u"show a dagger (†) on comments voted controversial"), "highlight_controversial")}
     &#32;<span class="details">${_("(a controversial comment is one that's been both upvoted and downvoted significantly)")}</span>
     </p>
-    <% 
+    %endif
+
+    <%
        input = unsafe(capture(num_input, c.user.pref_min_comment_score,
                               'min_comment_score'))
        %>
-    <p>
+   <!--  <p>
       ${_wsf("don't show me comments with a score less than %(num)s", num=input)}
       &#32;<span class="details">${_("(leave blank to show all comments)")}</span>
-    </p>
+    </p> -->
     <p>
-      <% 
+      <%
        input = unsafe(capture(num_input, c.user.pref_num_comments,
                               'num_comments'))
        %>
@@ -268,6 +315,9 @@
     </span>
     </td>
   </tr>
+
+
+
   <tr>
     <th>${_("messaging options")}</th>
     <td class="prefright">
@@ -291,7 +341,7 @@
         ${_("(otherwise, they will be marked as read when you click them)")}
       </span>
       <br>
-      ${checkbox(_("notify me when people say my username"), "monitor_mentions")}
+      ${checkbox(_("notify me when people say my username in comments"), "monitor_mentions")}
       %if feature.is_enabled('orangereds_as_emails'):
         <br>
         ${checkbox(_("send messages as emails"), "email_messages", disabled=(not c.user.email_verified), disabled_text=_("requires a verified email"))}
@@ -303,10 +353,16 @@
   <tr>
     <th>${_("display options")}</th>
     <td class="prefright">
-      ${checkbox(_("allow subreddits to show me custom themes"), "show_stylesheets")}
+      
+      ## CUSTOM: Site theme
+      <p>
+        ${_wsf("theme %(sort)s", sort=unsafe(capture(site_theme_sort_options)))}
+      </p>
+
+      ${checkbox(_("allow subs to show me custom themes"), "show_stylesheets")}
       %if feature.is_enabled('stylesheets_everywhere'):
         &#32;<span class="details reddit-gold">
-          ${_("(you can also choose which subreddit themes to disable on an individual level)")}
+          ${_("(you can also choose which sub themes to disable on an individual level)")}
         </span>
       %endif
       <br/>
@@ -315,7 +371,7 @@
       ${checkbox(_("show link flair"), "show_link_flair")}
       %if c.user.pref_show_promote is not None:
         <br/>
-        ${checkbox(_("show self-serve advertising tab on front page"), 
+        ${checkbox(_("show self-serve advertising tab on front page"),
           "show_promote")}
       %endif
       %if feature.is_enabled('legacy_search_pref'):
@@ -327,14 +383,19 @@
   <tr>
     <th>${_("content options")}</th>
     <td class="prefright">
+      %if g.site_index_user_configurable == 'true':
+        <p>
+          ${_wsf("home page %(sort)s", sort=unsafe(capture(site_index_sort_options)))}
+        <p>
+      %endif
       ${checkbox(_("I am over eighteen years old and willing to view adult content"), "over_18")}
-      &#32;<span class="details">(${_("required to view some subreddits")})</span>
+      &#32;<span class="details">(${_("required to view some subs")})</span>
       <br/>
         ${checkbox(_("label posts that are not safe for work (NSFW)"), "label_nsfw", disabled = c.user.pref_no_profanity, disabled_text = "(requires not 'safer for work' mode)")}
       <br/>
-        ${checkbox(_("enable private RSS feeds"), "private_feeds")} 
+ <!--        ${checkbox(_("enable private RSS feeds"), "private_feeds")}
        &#32;<span class="details">
-        ${_("(available from the 'RSS feed' tab in prefs)")}</span>
+        ${_("(available from the 'RSS feed' tab in prefs)")}</span> -->
     </td>
   <tr>
     <th>${_("privacy options")}</th>
@@ -346,9 +407,9 @@
            link1 = format_html('&#32;<a href="/user/%s/upvoted">/user/%s/upvoted</a>&#32;', c.user.name, c.user.name)
            link2 = format_html('&#32;<a href="/user/%s/downvoted">/user/%s/downvoted</a>', c.user.name, c.user.name)
            %>
-        (${_wsf("let everyone see %(link1)s and %(link2)s", link1=link1, link2=link2)})
+           ## (${_wsf("let everyone see %(link1)s and %(link2)s", link1=link1, link2=link2)})
       </span>
-      <br/>
+<!--       <br/>
       ${checkbox(_("allow my data to be used for research purposes"), "research")}
       &#32;
       <span class="details">
@@ -357,7 +418,7 @@
            ${_("details")}
          </a>
        )
-      </span>
+      </span> -->
       <br />
       ${checkbox(_("don't allow search engines to index my user profile"), "hide_from_robots")}
       &#32;
@@ -376,15 +437,64 @@
       &#32;
       <span class="details">
         <%
-          beta_sr_link = format_html('&#32;<a href="/r/%s">/r/%s</a>&#32;', g.beta_sr, g.beta_sr)
+          beta_sr_link = format_html('&#32;<a href="/%s/%s">/%s/%s</a>&#32;', g.brander_community_abbr, g.beta_sr, g.brander_community_abbr, g.beta_sr)
         %>
         (${_wsf("by enabling you'll be subscribed to %(beta_sr_link)s automatically.", beta_sr_link=beta_sr_link)}
           &#32;
-          <a href="/r/${g.beta_sr}/wiki">${_("details on the /r/{beta_sr} wiki").format(beta_sr=g.beta_sr)}</a>)
+          <a href="/${g.brander_community_abbr}/${g.beta_sr}/wiki">${_("details on the /" + g.brander_community_abbr + "/{beta_sr} wiki").format(beta_sr=g.beta_sr)}</a>)
       </span>
     </td>
   </tr>
   %endif
+
+  ## CUSTOM: subscriptions, mass unsubscribe
+  <%def name="unsubscribe_actions_options()">
+    <% menu = SubscriptionsSubscribeMenu() %>
+    <select id="subscription-unsubsribe" name="subscriptions_unsubscribe" onchange="if ($(this).val() != 'subs_do_nothing') { if (!confirm('really unsubscribe from all subs?')){$(this).val('subs_do_nothing')}}">
+          %for sort in menu._options:
+          <option ${'selected="selected"' if sort == c.user.pref_subscriptions_unsubscribe else ""}
+                  value="${sort}">
+            ${menu.make_title(sort)}&#32;${_('(recommended)') if sort == menu._default else ''}
+          </option>
+          %endfor
+    </select>
+  </%def>
+  <tr>
+    <th>${_("subscriptions")} <a name="subscriptions"></a></th>
+      <td class="prefright">
+        <p>
+          ${_wsf("unsubscribe from all subs %(sort)s", sort=unsafe(capture(unsubscribe_actions_options)))}
+        </p>
+    </td>
+  </tr>
+
+  ## CUSTOM: chat
+  ## TODO: can't hide and not post chat_sidebar_size_options because VoneOf will set a validation error if it's null
+  ## Fix is custom validator or adding VoneOfOrNone?
+  ## Should hide all/most fields if feature_chat is off or if user does not have 'enable chat' checked
+  <%def name="chat_sidebar_size_options()">
+    <% menu = ChatSidebarSizeMenu() %>
+    <select name="chat_sidebar_size">
+          %for sort in menu._options:
+          <option ${'selected="selected"' if sort == c.user.pref_chat_sidebar_size else ""}
+                  value="${sort}">
+            ${menu.make_title(sort)}&#32;${_('(recommended)') if sort == menu._default else ''}
+          </option>
+          %endfor
+    </select>
+  </%def>
+  <tr>
+    <th>${_("chat")}</th>
+    <td class="prefright">
+      ${checkbox(_("enable chat"), "chat_enabled")}
+      <br/>
+      <p>
+        ${_wsf("sidebar chat width %(sort)s", sort=unsafe(capture(chat_sidebar_size_options)))}
+      </p>
+    </td>
+  </tr>
+
+  ## end if logged in
   %endif
 
   %if c.user.gold:
@@ -415,13 +525,15 @@
     <th>${_("gold options")}</th>
     <td class="prefright">
       ${checkbox(_("highlight new comments"), "highlight_new_comments")}
-      <% gold_link = unsafe('&#32;<a href="/gold/about">' + _("reddit gold") + '</a>') %>
+      <% gold_link = unsafe('&#32;<a href="/gold/about">' + _("gold system") + '</a>') %>
       &#32;<span class="details">
-        (${_wsf("since you don't have %(gold_link)s, this will only apply in subreddits you moderate", gold_link=gold_link)})
+        (${_wsf("This a test feature, this will only apply in subs you moderate")})
       </span>
     </td>
   </tr>
   %endif
+
+
 
   %if feature.is_enabled('stylesheets_everywhere'):
     <tr class="gold-accent">
@@ -454,7 +566,7 @@
           % endif
 
           <div class="theme select-custom-theme">
-            <label><input type="radio" name="theme_selector" id="other_theme_selector" value="" ${"checked" if thing.use_other_theme else ""}>use theme from /r/</label>
+            <label><input type="radio" name="theme_selector" id="other_theme_selector" value="" ${"checked" if thing.use_other_theme else ""}>use theme from /${g.brander_community_abbr}/</label>
               <input type="text" class="text" size="21" maxlength="21" name="other_theme" placeholder="subreddit" ${"value=" + c.user.pref_default_theme_sr if thing.use_other_theme and c.user.pref_default_theme_sr else ""}>
               <span class="details">
                   (${_("warning: use non-featured themes at your own risk")})
@@ -492,3 +604,5 @@
     </div>
   </div>
 </%def>
+
+

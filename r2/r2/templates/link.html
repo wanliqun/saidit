@@ -39,11 +39,10 @@
 <%inherit  file="printable.html"/>
 <%namespace file="utils.html" import="plain_link, thing_timestamp, edited, nsfw_stamp, quarantine_stamp, thumbnail_img" />
 <%namespace file="printablebuttons.html" import="toggle_button" />
+<%namespace file="utils.html" import="text_with_links" />
+
  
 <%def name="numcol()">
-  <span class="rank">
-    ${thing.num_text}
-  </span>
 </%def>
 
 <%def name="make_link(name, css_class, tabindex=0)">
@@ -112,7 +111,6 @@
     ${self.approval_checkmark()}
     &#32;
 
-    ${self.domain()}
 
     %if c.user_is_admin:
         %for link_note in thing.link_notes:
@@ -135,6 +133,8 @@
 
   <p class="tagline">
     ${self.tagline()}
+    &nbsp;${_('from-domain')}&nbsp;
+    ${self.domain()}
   </p>
 
   <% 
@@ -196,35 +196,26 @@
 </%def>
 
 <%def name="subreddit()" buffered="True">
-  ${plain_link('/r/' + thing.subreddit.name, thing.subreddit_path, _sr_path=False,
+  ${plain_link('/' + g.brander_community_abbr + '/' + thing.subreddit.name, thing.subreddit_path, _sr_path=False,
                _class="subreddit hover may-blank")}
 </%def>
 
+## CUSTOM: voting model
 <%def name="midcol(display=True, cls = '')">
     <div class="midcol ${cls}"
        ${not display and "style='display:none'" or ''}>
-    ${self.arrow(thing, 1, thing.likes)}
-    %if thing.pref_compress:
-      <div class="score-placeholder"></div>
-    %elif thing.hide_score:
-      <div class="score likes">&bull;</div> 
-      <div class="score unvoted">&bull;</div> 
-      <div class="score dislikes">&bull;</div> 
-    %else:
-      ${self.score(thing, tag='div')}
-    %endif
-    ${self.arrow(thing, 0, thing.likes == False)}
+    ${self.arrow_intfun_links(thing, 1, thing.likes, thing.hide_score, thing.pref_compress)}
+    ${self.arrow_intfun_links(thing, 0, thing.dislikes, thing.hide_score, thing.pref_compress)}
   </div>
  ${self.thumbnail()}
 </%def>
 
-
 <%def name="domain(link=True)">
   <span class="domain">
     %if link:
-      (<a href="${thing.domain_path}">${thing.domain_str}</a>)
+      <a href="${thing.domain_path}">${thing.domain_str}</a>
     %else:
-      (${thing.domain_str})
+      ${thing.domain_str}
     %endif
     %if c.user_is_admin:
       &#32;
@@ -245,7 +236,7 @@
                               ))}
   ${self.gildings()}
   %if thing.use_sticky_style:
-    &#32;-&#32;<span class="stickied-tagline" title="selected by this subreddit's moderators">announcement</span>
+    &#32;-&#32;<span class="stickied-tagline" title="selected by this sub's moderators">announcement</span>
   %endif
 
   %if getattr(thing, 'savedcategory', None) is not None:

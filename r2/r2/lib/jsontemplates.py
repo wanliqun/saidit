@@ -767,7 +767,6 @@ def generate_image_links(preview_object, file_type=None, censor_nsfw=False):
         url = g.image_resizing_provider.resize_image(
             preview_object,
             w,
-            file_type=file_type,
             censor_nsfw=censor_nsfw,
             max_ratio=PREVIEW_MAX_RATIO,
         )
@@ -780,7 +779,6 @@ def generate_image_links(preview_object, file_type=None, censor_nsfw=False):
 
     url = g.image_resizing_provider.resize_image(
         preview_object,
-        file_type=file_type,
         censor_nsfw=censor_nsfw,
     )
 
@@ -820,6 +818,7 @@ class LinkJsonTemplate(ThingTemplate):
             "hide_score": item.hide_score,
             "is_self": item.is_self,
             "likes": item.likes,
+            "dislikes": item.dislikes,
             "link_flair_css_class": item.flair_css_class,
             "link_flair_text": item.flair_text,
             "locked": item.locked,
@@ -952,6 +951,7 @@ class CommentJsonTemplate(ThingTemplate):
             "downs": 0,
             "gilded": item.gildings,
             "likes": item.likes,
+            "dislikes": item.dislikes,
             "link_id": cls.get_link_name(item),
             "saved": item.saved,
             "score": item.score,

@@ -43,6 +43,7 @@ def load_controllers():
     from listingcontroller import HotController
     from listingcontroller import NewController
     from listingcontroller import RisingController
+    from listingcontroller import NewCommentsController
     from listingcontroller import BrowseController
     from listingcontroller import AdsController
     from listingcontroller import UserListListingController
@@ -58,7 +59,7 @@ def load_controllers():
 
     from admin import AdminToolController
     from front import FormsController
-    from front import FrontController
+    from front import FrontController, FrontUnstyledController
     from health import HealthController
     from buttons import ButtonsController
     from captcha import CaptchaController
@@ -100,5 +101,10 @@ def load_controllers():
     from ipn import CoinbaseController
     from ipn import RedditGiftsController
     from mailgun import MailgunWebhookController
+
+    # CUSTOM
+    from globaluserbans import GlobalUserBansController
+    from iphistory import IpHistoryController
+    from ipbans import IpBansController
 
     _reddit_controllers.update((name.lower(), obj) for name, obj in locals().iteritems())

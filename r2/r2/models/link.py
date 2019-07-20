@@ -54,6 +54,11 @@ from subreddit import (
     FakeSubreddit,
     Subreddit,
     SubredditsActiveForFrontPage,
+
+    # CUSTOM
+    AllSR,
+    HomeSR,
+    DynamicSR,
 )
 from printable import Printable
 from r2.config import extensions
@@ -96,6 +101,9 @@ from pycassa.system_manager import (
     DOUBLE_TYPE,
 )
 import pytz
+
+# CUSTOM
+from urllib import quote
 
 NOTIFICATION_EMAIL_DELAY = timedelta(hours=1)
 
@@ -417,7 +425,9 @@ class Link(Thing, Printable):
             ])
         elif style == "xml":
             s.append(request.GET.has_key("nothumbs"))
-        elif style == "compact":
+
+        # SaidIt CUSTOM
+        elif style == "compact" or style == g.extension_subdomain_mobile_v2_render_style:
             s.append(c.permalink_page)
 
         # add link flair to the key if the user and site have enabled it and it
@@ -446,11 +456,11 @@ class Link(Thing, Printable):
             else:
                 res = "/%s" % p
         elif not force_domain:
-            res = "/r/%s/%s" % (sr.name, p)
+            res = "/%s/%s/%s" % (g.brander_community_abbr, sr.name, p)
         elif sr != c.site or force_domain:
             permalink_domain = get_domain(subreddit=False)
-            res = "%s://%s/r/%s/%s" % (g.default_scheme, permalink_domain,
-                                       sr.name, p)
+            res = "%s://%s/%s/%s/%s" % (g.default_scheme, permalink_domain,
+                                       g.brander_community_abbr, sr.name, p)
         else:
             res = "/%s" % p
 
@@ -463,7 +473,7 @@ class Link(Thing, Printable):
     def make_canonical_link(self, sr, subdomain='www'):
         domain = '%s.%s' % (subdomain, g.domain)
         path = 'comments/%s/%s/' % (self._id36, title_to_url(self.title))
-        return '%s://%s/r/%s/%s' % (g.default_scheme, domain, sr.name, path)
+        return '%s://%s/%s/%s/%s' % (g.default_scheme, domain, g.brander_community_abbr, sr.name, path)
 
     def make_permalink_slow(self, force_domain=False):
         return self.make_permalink(self.subreddit_slow,
@@ -668,6 +678,10 @@ class Link(Thing, Printable):
                 elif pref_media != 'off' and not user.pref_compress:
                     show_media = True
 
+            # CUSTOM
+            elif feature.is_enabled('force_show_media_front') and pref_media != 'off' and isinstance(site, (AllSR, DefaultSR, HomeSR, DynamicSR)):
+                show_media = True
+
             show_media_preview = False
             if feature.is_enabled('autoexpand_media_previews'):
                 if pref_media_preview == "on":
@@ -784,9 +798,10 @@ class Link(Thing, Printable):
                     url_subreddit = urlparser.get_subreddit()
                     if (url_subreddit and
                             not isinstance(url_subreddit, DefaultSR)):
-                        item.domain_str = ('{0}/r/{1}'
+                        item.domain_str = ('{0}/{1}/{2}'
                                            .format(item.domain,
-                                                   url_subreddit.name))
+                                                    g.brander_community_abbr,
+                                                    url_subreddit.name))
                 elif isinstance(item.media_object, dict):
                     try:
                         author_url = item.media_object['oembed']['author_url']
@@ -900,7 +915,7 @@ class Link(Thing, Printable):
                                                 "%(lastedited)s"))
                     taglinetext = unsafe(taglinetext + author_text)
                 elif item.different_sr:
-                    taglinetext = _("submitted %(when)s %(lastedited)s "
+                    taglinetext = _("%(when)s %(lastedited)s "
                                     "by %(author)s to %(reddit)s")
                 else:
                     taglinetext = _("submitted %(when)s %(lastedited)s "
@@ -911,7 +926,7 @@ class Link(Thing, Printable):
                                               _("%(score)s submitted %(when)s"))
                     taglinetext = unsafe(taglinetext + author_text)
                 elif item.different_sr:
-                    taglinetext = _("submitted %(when)s by %(author)s "
+                    taglinetext = _("%(when)s by %(author)s "
                                     "to %(reddit)s")
                 else:
                     taglinetext = _("submitted %(when)s by %(author)s")
@@ -1825,7 +1840,10 @@ class Comment(Thing, Printable):
             #will get updated in builder
             item.num_children = 0
             item.numchildren_text = CachedVariable("numchildren_text")
-            item.score_fmt = Score.points
+
+            # CUSTOM: voting model, set the Comments score display style
+            item.score_fmt = Score.points_dual
+
             item.permalink = item.make_permalink(item.link, item.subreddit)
 
             item.is_author = (user == item.author)
@@ -1853,7 +1871,8 @@ class Comment(Thing, Printable):
                 item.upvotes = 1
                 item.downvotes = 0
                 item.score = 1
-                item.voting_score = [1, 1, 1]
+                # CUSTOM: voting model
+                item.voting_score = [1, 1, 1, 1]
                 item.render_css_class += " score-hidden"
 
             # in contest mode, use only upvotes for the score if the subreddit
@@ -1861,9 +1880,10 @@ class Comment(Thing, Printable):
             if (item.link.contest_mode and
                     item.subreddit.contest_mode_upvotes_only and
                     not item.score_hidden):
-                item.score = item._ups
+                # CUSTOM: voting model, upvotes/insightful only
+                item.score = item._ups + item._ups
                 item.voting_score = [
-                    item.score - 1, item.score, item.score + 1]
+                    item.score + 1, item.score, item.score + 2, item.score + 3]
                 item.collapsed = False
 
             if item.is_author:
@@ -1871,13 +1891,52 @@ class Comment(Thing, Printable):
 
             #will seem less horrible when add_props is in pages.py
             from r2.lib.pages import UserText
+
+            # CUSTOM - Chat widgets in comments
+            is_chat_post = False
+            chat_popout_url = ''
+            chat_enabling_post_content = g.live_config['chat_enabling_post_content']
+            chat_client = ''
+            chat_client_url = ''
+            chat_channel = ''
+            chat_user = ''
+            chat_client_user = ''
+            chat_client_password = ''
+            chat_channels = ''
+
+            if feature.is_enabled('chat') and c.user.pref_chat_enabled and item.subreddit and item.subreddit.chat_enabled and item.body.find(chat_enabling_post_content) == 0:
+              is_chat_post = True
+              chat_client = g.live_config['chat_client']
+              chat_client_url = g.chat_client_url
+              chat_user = c.user.pref_chat_user
+              chat_client_user = c.user.pref_chat_client_user
+              chat_client_password = c.user.pref_chat_client_password
+                
+              irc_sanitized_post_title = item.body.replace(chat_enabling_post_content,"")[:15]
+              irc_sanitized_post_title = re.sub('\-+', '-', re.sub(r'[^a-zA-Z0-9]','-', irc_sanitized_post_title)).strip(' -')
+              chat_channels = g.live_config['chat_channel_name_prefix'] + item.subreddit.name + '/' + irc_sanitized_post_title + g.live_config['chat_channel_name_suffix']
+              chat_channels = quote(chat_channels)
+
             item.usertext = UserText(item, item.body,
                                      editable=item.is_author,
                                      nofollow=item.nofollow,
                                      target=item.target,
                                      extra_css=extra_css,
-                                     have_form=item.have_form)
+                                     have_form=item.have_form,
 
+                                     # CUSTOM
+                                     is_chat_post = is_chat_post,
+                                     chat_user_is_guest = not c.user_is_loggedin,
+                                     user_chat_enabled = c.user.pref_chat_enabled,
+                                     chat_client = chat_client,
+                                     chat_client_url = chat_client_url,
+                                     chat_channel = chat_channels,
+                                     chat_user = chat_user,
+                                     chat_client_user = chat_client_user,
+                                     chat_client_password = chat_client_password,
+
+                                     )
+            
             item.lastedited = CachedVariable("lastedited")
 
         # Run this last
@@ -2150,7 +2209,7 @@ class Message(Thing, Printable):
                 ):
                     from r2.lib.template_helpers import get_domain
                     if from_sr:
-                        sender_name = '/r/%s' % sr.name
+                        sender_name = '/%s/%s' % (g.brander_community_abbr, sr.name)
                     else:
                         sender_name = '/u/%s' % author.name
                     permalink = 'http://%(domain)s%(path)s' % {
@@ -2382,7 +2441,7 @@ class Message(Thing, Printable):
                     # distinguish, but we only want to use the admin distinguish
                     # on messages sent from /r/reddit.com
                     if (item.distinguished == "admin" and
-                            "/r/%s" % item.subreddit.name == g.admin_message_acct):
+                            "/%s/%s" % (g.brander_community_abbr, item.subreddit.name) == g.admin_message_acct):
                         subreddit_distinguish = "admin"
                     elif (item.distinguished == "moderator" or
                             item.distinguished == "admin"):

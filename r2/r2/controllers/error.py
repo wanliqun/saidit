@@ -67,13 +67,13 @@ except Exception, e:
 redditbroke =  \
 '''<html>
   <head>
-    <title>reddit broke!</title>
+    <title>SaidIt broke!</title>
   </head>
   <body>
     <div style="margin: auto; text-align: center">
       <p>
         <a href="/">
-          <img border="0" src="%s" alt="you broke reddit" />
+          <img border="0" src="%s" alt="SaidIt Broke!" />
         </a>
       </p>
       <p>
@@ -106,7 +106,8 @@ class ErrorController(RedditController):
     def check_for_bearer_token(self):
         pass
 
-    allowed_render_styles = ('html', 'xml', 'js', 'embed', '', "compact", 'api')
+    # SaidIt CUSTOM
+    allowed_render_styles = ('html', 'xml', 'js', 'embed', '', "compact", 'api', g.extension_subdomain_mobile_v2_render_style)
     # List of admins to blame (skip the first admin, "reddit")
     # If list is empty, just blame "an admin"
     admins = g.admins[1:] or ["an admin"]

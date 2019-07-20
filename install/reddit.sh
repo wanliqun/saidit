@@ -99,6 +99,9 @@ done
 # install primary packages
 $RUNDIR/install_apt.sh
 
+# install npm packages
+$RUNDIR/install_npm.sh
+
 # install cassandra from datastax
 $RUNDIR/install_cassandra.sh
 
@@ -134,13 +137,14 @@ function clone_reddit_repo {
 }
 
 function clone_reddit_service_repo {
-    clone_reddit_repo $1 reddit/reddit-service-$1
+    clone_reddit_repo $1 reddit-archive/reddit-service-$1
 }
 
-clone_reddit_repo reddit reddit/reddit
-clone_reddit_repo i18n reddit/reddit-i18n
+clone_reddit_repo reddit libertysoft3/saidit
+clone_reddit_repo i18n libertysoft3/reddit-i18n
 clone_reddit_service_repo websockets
 clone_reddit_service_repo activity
+clone_reddit_repo snudown libertysoft3/snudown
 
 ###############################################################################
 # Configure Services
@@ -176,6 +180,7 @@ for plugin in $REDDIT_AVAILABLE_PLUGINS; do
 done
 install_reddit_repo websockets
 install_reddit_repo activity
+install_reddit_repo snudown
 
 # generate binary translation files from source
 sudo -u $REDDIT_USER make -C $REDDIT_SRC/i18n clean all
@@ -191,12 +196,28 @@ if [ ! -f development.update ]; then
     cat > development.update <<DEVELOPMENT
 # after editing this file, run "make ini" to
 # generate a new development.ini
+[secrets]
+# the tokens in this section are base64 encoded
+# SECRET = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# FEEDSECRET = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# ADMINSECRET = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# websocket = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# media_embed = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# action_name = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# email_notifications = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# cache_poisoning = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# adserver_click_url_secret = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# modmail_email_secret = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
+# request_signature_secret = YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU2Nzg5
 
 [DEFAULT]
 # global debug flag -- displays pylons stacktrace rather than 500 page on error when true
 # WARNING: a pylons stacktrace allows remote code execution. Make sure this is false
 # if your server is publicly accessible.
 debug = true
+uncompressedJS = true
+sqlprinting = false
+profile_directory =
 
 disable_ads = true
 disable_captcha = true
@@ -205,6 +226,7 @@ disable_require_admin_otp = true
 
 domain = $REDDIT_DOMAIN
 oauth_domain = $REDDIT_DOMAIN
+https_endpoint = https://%(domain)s
 
 plugins = $plugin_str
 
@@ -212,8 +234,26 @@ media_provider = filesystem
 media_fs_root = /srv/www/media
 media_fs_base_url_http = http://%(domain)s/media/
 
+min_membership_create_community = 0
+
+# the default subreddit for submissions and wiki. created by inject_test_data.py
+default_sr = frontpage
+
+# account name that AutoModerator actions will be done by
+automoderator_account = automoderator
+
 [server:main]
 port = 8001
+
+[live_config]
+# Specify global admins and permissions, each user should have one of admin, sponsor, or employee as their permission level
+employees = saidit:admin
+feature_force_https = on
+
+create_sr_account_age_days = 0
+create_sr_link_karma = 0
+create_sr_comment_karma = 0
+create_sr_ratelimit_once_per_days = 0
 DEVELOPMENT
     chown $REDDIT_USER development.update
 else
@@ -308,6 +348,12 @@ service gunicorn start
 mkdir -p /srv/www/media
 chown $REDDIT_USER:$REDDIT_GROUP /srv/www/media
 
+cat > /etc/nginx/conf.d/reddit.conf <<NGINX
+log_format directlog '\$remote_addr - \$remote_user [\$time_local] '
+                      '"\$request_method \$request_uri \$server_protocol" \$status \$body_bytes_sent '
+                      '"\$http_referer" "\$http_user_agent"';
+NGINX
+
 cat > /etc/nginx/sites-available/reddit-media <<MEDIA
 server {
     listen 9000;
@@ -327,10 +373,6 @@ upstream click_server {
 
 server {
   listen 8082;
-
-  log_format directlog '\$remote_addr - \$remote_user [\$time_local] '
-                      '"\$request_method \$request_uri \$server_protocol" \$status \$body_bytes_sent '
-                      '"\$http_referer" "\$http_user_agent"';
   access_log      /var/log/nginx/traffic/traffic.log directlog;
 
   location / {
@@ -362,12 +404,21 @@ server {
     ssl on;
     ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
     ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+    ssl_dhparam /etc/nginx/dhparam.pem;
 
+    # Support TLSv1 for Android 4.3 (Samsung Galaxy S3) https://www.ssllabs.com/ssltest/viewClient.html?name=Android&version=4.3&key=61
+    # ciphers from https://cipherli.st legacy / old list
     ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-    ssl_ciphers EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5;
+    ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH:ECDHE-RSA-AES128-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA128:DHE-RSA-AES128-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA128:ECDHE-RSA-AES128-SHA384:ECDHE-RSA-AES128-SHA128:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA128:DHE-RSA-AES128-SHA128:DHE-RSA-AES128-SHA:DHE-RSA-AES128-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA384:AES128-GCM-SHA128:AES128-SHA128:AES128-SHA128:AES128-SHA:AES128-SHA:DES-CBC3-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4";
     ssl_prefer_server_ciphers on;
-
     ssl_session_cache shared:SSL:1m;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+    # reddit code manages these headers
+    # add_header X-Frame-Options DENY;
+    # add_header X-Content-Type-Options nosniff;
+    # add_header X-XSS-Protection "1; mode=block";
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -382,6 +433,9 @@ server {
     }
 }
 SSL
+
+# SSL stuff
+openssl dhparam -out /etc/nginx/dhparam.pem 2048
 
 # remove the default nginx site that may conflict with haproxy
 rm -rf /etc/nginx/sites-enabled/default
@@ -588,7 +642,7 @@ set_consumer_count commentstree_q 1
 set_consumer_count newcomments_q 1
 set_consumer_count vote_link_q 1
 set_consumer_count vote_comment_q 1
-set_consumer_count automoderator_q 0
+set_consumer_count automoderator_q 1
 set_consumer_count butler_q 1
 set_consumer_count author_query_q 1
 set_consumer_count subreddit_query_q 1
@@ -630,18 +684,29 @@ if [ ! -f /etc/cron.d/reddit ]; then
 */2  * * * * root /sbin/start --quiet reddit-job-broken_things
 */2  * * * * root /sbin/start --quiet reddit-job-rising
 0    * * * * root /sbin/start --quiet reddit-job-trylater
+*/15 * * * * root /sbin/start --quiet reddit-job-update_popular_subreddits
+0    * * * * root /sbin/start --quiet reddit-job-hourly_traffic
+0    * * * * root /sbin/start --quiet reddit-job-subscribers
 
-# liveupdate
-*    * * * * root /sbin/start --quiet reddit-job-liveupdate_activity
+# liveupdate plugin
+#*    * * * * root /sbin/start --quiet reddit-job-liveupdate_activity
+
+# gold plugin
+#0    0 * * * root /sbin/start --quiet reddit-job-update_gold_users
 
 # jobs that recalculate time-limited listings (e.g. top this year)
+# must match 'db_pass' in development.update
 PGPASSWORD=password
-*/15 * * * * $REDDIT_USER $REDDIT_SRC/reddit/scripts/compute_time_listings link year "['hour', 'day', 'week', 'month', 'year']"
-*/15 * * * * $REDDIT_USER $REDDIT_SRC/reddit/scripts/compute_time_listings comment year "['hour', 'day', 'week', 'month', 'year']"
+*/15 * * * * $REDDIT_USER $REDDIT_SRC/reddit/scripts/compute_time_listings link year "['hour', 'day', 'week', 'month', 'year']" 2>&1 | /usr/bin/logger -t compute_time_listings_link
+*/15 * * * * $REDDIT_USER $REDDIT_SRC/reddit/scripts/compute_time_listings comment year "['hour', 'day', 'week', 'month', 'year']" 2>&1 | /usr/bin/logger -t compute_time_listings_comment
 
 # disabled by default, uncomment if you need these jobs
 #*    * * * * root /sbin/start --quiet reddit-job-email
-#0    0 * * * root /sbin/start --quiet reddit-job-update_gold_users
+#*/15  * * * * root /sbin/start reddit-job-update_trending_subreddits
+
+# solr search
+*/15  * * * * root /sbin/start --quiet reddit-job-solr_subreddits
+*/5 * * * * root /sbin/start --quiet reddit-job-solr_links
 CRON
 fi
 

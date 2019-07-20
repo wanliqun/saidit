@@ -456,11 +456,10 @@ def _set_media(link, force=False, **kwargs):
         # let's not muck about with the old-style thumbnails in case that
         # breaks assumptions.
         if not link.is_self:
-            link.thumbnail_url = media.thumbnail_url
-            link.thumbnail_size = media.thumbnail_size
-
             link.set_media_object(media.media_object)
             link.set_secure_media_object(media.secure_media_object)
+        link.thumbnail_url = media.thumbnail_url
+        link.thumbnail_size = media.thumbnail_size
         link.set_preview_object(media.preview_object)
 
         link._commit()
@@ -595,6 +594,20 @@ def get_media_embed(media_object):
     if "oembed" in media_object:
         if media_object.get("type") == "youtube.com":
             return _YouTubeScraper.media_embed(media_object)
+        elif media_object.get("type") == "invidious":
+            return _InvidiousScraper.media_embed(media_object)
+        elif media_object.get("type") == "peertube":
+            return _PeerTubeScraper.media_embed(media_object)
+        elif media_object.get("type") == "bitchute":
+            return _BitChuteScraper.media_embed(media_object)
+        elif media_object.get("type") == "dtube":
+            return _DTubeScraper.media_embed(media_object)
+        elif media_object.get("type") == "vimeo":
+            return _VimeoScraper.media_embed(media_object)
+        elif media_object.get("type") == "soundcloud":
+            return _SoundCloudScraper.media_embed(media_object)
+        elif media_object.get("type") == "imgur":
+            return _ImgurScraper.media_embed(media_object)
 
         return _EmbedlyScraper.media_embed(media_object)
 
@@ -606,9 +619,10 @@ class MediaEmbed(object):
     height = None
     content = None
     scrolling = False
+    direct_embed = False
 
     def __init__(self, height, width, content, scrolling=False,
-                 public_thumbnail_url=None, sandbox=True):
+                 public_thumbnail_url=None, sandbox=True, direct_embed=False):
         """Build a MediaEmbed.
 
         :param height int - The height of the media embed, in pixels
@@ -624,12 +638,15 @@ class MediaEmbed(object):
         """
 
         self.height = int(height)
+        # soundcloud sets '100%' oembed width but need an integer for padding in make_link_child()
+        if width == '100%':
+            width = 640
         self.width = int(width)
         self.content = content
         self.scrolling = scrolling
         self.public_thumbnail_url = public_thumbnail_url
         self.sandbox = sandbox
-
+        self.direct_embed = direct_embed
 
 class Scraper(object):
     @classmethod
@@ -647,6 +664,22 @@ class Scraper(object):
                 return _EmbedlyScraper(url,
                                        autoplay=autoplay,
                                        maxwidth=maxwidth)
+
+        # TODO - use scraper.factory hook in a module?
+        if _PeerTubeScraper.matches(url):
+            return _PeerTubeScraper(url, maxwidth=maxwidth)
+        elif _BitChuteScraper.matches(url):
+            return _BitChuteScraper(url, maxwidth=maxwidth)
+        elif _DTubeScraper.matches(url):
+            return _DTubeScraper(url, maxwidth=maxwidth)
+        elif _VimeoScraper.matches(url):
+            return _VimeoScraper(url, maxwidth=maxwidth)
+        elif _InvidiousScraper.matches(url):
+            return _InvidiousScraper(url, maxwidth=maxwidth)
+        elif _SoundCloudScraper.matches(url):
+            return _SoundCloudScraper(url, maxwidth=maxwidth)
+        elif _ImgurScraper.matches(url):
+            return _ImgurScraper(url, maxwidth=maxwidth)
 
         return _ThumbnailOnlyScraper(url)
 
@@ -963,6 +996,9 @@ class _YouTubeScraper(Scraper):
         if not (html and width and height):
             return
 
+        # force youtube-nocookie embeds
+        html = html.replace("youtube.com/embed/", "youtube-nocookie.com/embed/")
+
         return MediaEmbed(
             width=width,
             height=height,
@@ -970,6 +1006,506 @@ class _YouTubeScraper(Scraper):
             public_thumbnail_url=public_thumbnail_url,
         )
 
+class _InvidiousScraper(_YouTubeScraper):
+    URL_MATCH = re.compile(r"https?://((www\.)?invidio\.us/(watch|embed))", re.IGNORECASE)
+    YT_DOMAIN = "invidio.us"
+    YT_EMBED_PART = YT_DOMAIN + "/embed/"
+    
+    def _fetch_from_youtube(self):
+        params = {
+            "url": self.url.replace(self.YT_DOMAIN, "youtube.com"),
+            "format": "json",
+            "maxwidth": self.maxwidth,
+        }
+
+        with g.stats.get_timer("providers.youtube.oembed"):
+            content = requests.get(self.OEMBED_ENDPOINT, params=params).content
+
+        return json.loads(content)
+    
+    def _make_media_object(self, oembed):
+        if oembed.get("type") == "video":
+            return {
+                "type": "invidious",
+                "oembed": oembed,
+            }
+        return None
+    
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+
+        html = oembed.get("html")
+        width = oembed.get("width")
+        height = oembed.get("height")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+
+        if not (html and width and height):
+            return
+
+        # embed from invidious
+        html = html.replace("www.", "")
+        html = html.replace("youtube.com/embed/", cls.YT_EMBED_PART)
+
+        return MediaEmbed(
+            width=width,
+            height=height,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+        )
+
+class _PeerTubeScraper(_ThumbnailOnlyScraper):
+    URL_MATCH = re.compile(r"^https?\:\/\/(([^:\/?#]*)(?:\:([0-9]+))?)\/videos\/watch\/(\w{8}\-\w{4}\-\w{4}\-\w{4}\-\w{12})(\?start=(\w+))?$", re.IGNORECASE)
+
+    def __init__(self, url, maxwidth):
+        self.url = url
+        self.maxwidth = maxwidth
+
+    @classmethod
+    def matches(cls, url):
+        return cls.URL_MATCH.match(url)
+
+    def _make_media_object(self, oembed):
+        return {
+            "type": "peertube",
+            "oembed": oembed,
+        }
+
+    def scrape(self):
+        thumbnail_url, image_data = self._find_thumbnail_image()
+        if not thumbnail_url:
+            return None, None, None, None
+        if thumbnail_url.startswith('//'):
+            thumbnail_url = coerce_url_to_protocol(thumbnail_url, self.protocol)
+        if not image_data:
+            _, image_data = _fetch_url(thumbnail_url, referer=self.url)
+        if not image_data:
+            return None, None, None, None
+
+        uid = _filename_from_content(image_data)
+        image = str_to_image(image_data)
+        storage_url = upload_media(image, category='previews')
+        width, height = image.size
+        preview_object = {
+            'uid': uid,
+            'url': storage_url,
+            'width': width,
+            'height': height,
+        }
+
+        thumbnail = _prepare_image(image)
+        self.url = self.url.replace('/videos/watch/','/videos/embed/')
+        oembed = {
+            'html': '<iframe width="560" height="315" sandbox="allow-same-origin allow-scripts" src="' + self.url + '" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style="max-width: 100%;"></iframe>',
+            'width': 560,
+            'height': 315,
+            'thumbnail_url': thumbnail_url
+        }
+        media_object = self._make_media_object(oembed)
+
+        return (
+            thumbnail,
+            preview_object,
+            media_object,
+            media_object,
+        )
+
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+        html = oembed.get("html")
+        width = oembed.get("width")
+        height = oembed.get("height")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+        if not (html and width and height):
+            return
+        return MediaEmbed(
+            width=width,
+            height=height,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+        )
+
+class _BitChuteScraper(_ThumbnailOnlyScraper):
+    URL_MATCH = re.compile(r"^https?\:\/\/(www\.)*bitchute\.com\/video\/\w+", re.IGNORECASE)
+
+    def __init__(self, url, maxwidth):
+        self.url = url
+        self.maxwidth = maxwidth
+
+    @classmethod
+    def matches(cls, url):
+        return cls.URL_MATCH.match(url)
+
+    def _make_media_object(self, oembed):
+        return {
+            "type": "bitchute",
+            "oembed": oembed,
+        }
+
+    def scrape(self):
+        thumbnail_url, image_data = self._find_thumbnail_image()
+        if not thumbnail_url:
+            return None, None, None, None
+        if thumbnail_url.startswith('//'):
+            thumbnail_url = coerce_url_to_protocol(thumbnail_url, self.protocol)
+        if not image_data:
+            _, image_data = _fetch_url(thumbnail_url, referer=self.url)
+        if not image_data:
+            return None, None, None, None
+
+        uid = _filename_from_content(image_data)
+        image = str_to_image(image_data)
+        storage_url = upload_media(image, category='previews')
+        width, height = image.size
+        preview_object = {
+            'uid': uid,
+            'url': storage_url,
+            'width': width,
+            'height': height,
+        }
+
+        thumbnail = _prepare_image(image)
+        self.url = self.url.replace('/video/','/embed/')
+        oembed = {
+            'html': '<iframe width="640" height="360" scrolling="no" frameborder="0" style="border: none; max-width: 100%;" src="' + self.url + '" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>',
+            'width': 640,
+            'height': 360,
+            'thumbnail_url': thumbnail_url
+        }
+        media_object = self._make_media_object(oembed)
+
+        return (
+            thumbnail,
+            preview_object,
+            media_object,
+            media_object,
+        )
+
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+        html = oembed.get("html")
+        width = oembed.get("width")
+        height = oembed.get("height")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+        if not (html and width and height):
+            return
+        return MediaEmbed(
+            width=width,
+            height=height,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+        )
+
+# oEmbed required for thumbnail image
+class _DTubeScraper(Scraper):
+    OEMBED_ENDPOINT = "https://api.d.tube/oembed"
+    URL_MATCH = re.compile(r"^https?\:\/\/d\.tube\/(#\!\/)*v\/.+\/\w+", re.IGNORECASE)
+
+    def __init__(self, url, maxwidth):
+        self.url = url
+        self.maxwidth = maxwidth
+
+    @classmethod
+    def matches(cls, url):
+        return cls.URL_MATCH.match(url)
+
+    def _oembed_fetch(self):
+        params = {
+            "url": self.url,
+        }
+        with g.stats.get_timer("providers.dtube.oembed"):
+            content = requests.get(self.OEMBED_ENDPOINT, params=params).content
+
+        return json.loads(content)
+
+    def _make_media_object(self, oembed):
+        if oembed.get("type") == "video":
+            return {
+                "type": "dtube",
+                "oembed": oembed,
+            }
+        return None
+
+    def scrape(self):
+        self.url = self.url.replace('/#!/','/')
+        oembed = self._oembed_fetch()
+        if not oembed:
+            return None, None, None, None
+        thumbnail_url = oembed.get("thumbnail_url")
+        if not thumbnail_url:
+            return None, None, None, None
+
+        _, content = _fetch_url(thumbnail_url, referer=self.url)
+        uid = _filename_from_content(content)
+        image = str_to_image(content)
+        storage_url = upload_media(image, category='previews')
+        width, height = image.size
+        preview_object = {
+            'uid': uid,
+            'url': storage_url,
+            'width': width,
+            'height': height,
+        }
+
+        thumbnail = _prepare_image(image)
+        media_object = self._make_media_object(oembed)
+
+        return (
+            thumbnail,
+            preview_object,
+            media_object,
+            media_object,
+        )
+
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+        html = oembed.get("html")
+        width = oembed.get("width")
+        height = oembed.get("height")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+        if not (html and width and height):
+            return
+        return MediaEmbed(
+            width=width,
+            height=height,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+        )
+
+# fails to find thumbnail but works in js expando: https://player.vimeo.com/video/210599507, https://vimeo.com/ondemand/thetrialsofmuhammadali/122150560
+class _VimeoScraper(_ThumbnailOnlyScraper):
+    URL_MATCH = re.compile(r"^https?\:\/\/(player\.)*vimeo\.com\/((.+\/.+\/)|(video\/))*(\d+)(#.+)*", re.IGNORECASE)
+
+    def __init__(self, url, maxwidth):
+        self.url = url
+        self.maxwidth = maxwidth
+
+    @classmethod
+    def matches(cls, url):
+        return cls.URL_MATCH.match(url)
+
+    def _make_media_object(self, oembed):
+        return {
+            "type": "vimeo",
+            "oembed": oembed,
+        }
+
+    def scrape(self):
+        thumbnail_url, image_data = self._find_thumbnail_image()
+        if not thumbnail_url:
+            return None, None, None, None
+        if thumbnail_url.startswith('//'):
+            thumbnail_url = coerce_url_to_protocol(thumbnail_url, self.protocol)
+        if not image_data:
+            _, image_data = _fetch_url(thumbnail_url, referer=self.url)
+        if not image_data:
+            return None, None, None, None
+
+        uid = _filename_from_content(image_data)
+        image = str_to_image(image_data)
+        storage_url = upload_media(image, category='previews')
+        width, height = image.size
+        preview_object = {
+            'uid': uid,
+            'url': storage_url,
+            'width': width,
+            'height': height,
+        }
+
+        thumbnail = _prepare_image(image)
+        match = self.URL_MATCH.match(self.url)
+        if match and match.group(5):
+            self.url = 'https://player.vimeo.com/video/' + match.group(5)
+            if match.group(6):
+                self.url += match.group(6)
+
+        oembed = {
+            'html': '<iframe width="640" height="360" style="max-width: 100%;" src="' + self.url + '" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>',
+            'width': 640,
+            'height': 360,
+            'thumbnail_url': thumbnail_url
+        }
+        media_object = self._make_media_object(oembed)
+
+        return (
+            thumbnail,
+            preview_object,
+            media_object,
+            media_object,
+        )
+
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+        html = oembed.get("html")
+        width = oembed.get("width")
+        height = oembed.get("height")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+        if not (html and width and height):
+            return
+        return MediaEmbed(
+            width=width,
+            height=height,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+        )
+
+# oEmbed required
+class _SoundCloudScraper(Scraper):
+    OEMBED_ENDPOINT = "https://soundcloud.com/oembed"
+    URL_MATCH = re.compile(r"^https?\:\/\/(www\.)*soundcloud.com\/.+\/.+", re.IGNORECASE)
+
+    def __init__(self, url, maxwidth):
+        self.url = url
+        self.maxwidth = maxwidth
+
+    @classmethod
+    def matches(cls, url):
+        return cls.URL_MATCH.match(url)
+
+    def _oembed_fetch(self):
+        params = {
+            "url": self.url,
+            "format": "json"
+        }
+        with g.stats.get_timer("providers.soundcloud.oembed"):
+            content = requests.get(self.OEMBED_ENDPOINT, params=params).content
+
+        return json.loads(content)
+
+    def _make_media_object(self, oembed):
+        if oembed.get("type") == "rich":
+            return {
+                "type": "soundcloud",
+                "oembed": oembed,
+            }
+        return None
+
+    def scrape(self):
+        oembed = self._oembed_fetch()
+        if not oembed:
+            return None, None, None, None
+        thumbnail_url = oembed.get("thumbnail_url")
+        if not thumbnail_url:
+            return None, None, None, None
+
+        _, content = _fetch_url(thumbnail_url, referer=self.url)
+        uid = _filename_from_content(content)
+        image = str_to_image(content)
+        storage_url = upload_media(image, category='previews')
+        width, height = image.size
+        preview_object = {
+            'uid': uid,
+            'url': storage_url,
+            'width': width,
+            'height': height,
+        }
+
+        thumbnail = _prepare_image(image)
+        media_object = self._make_media_object(oembed)
+
+        return (
+            thumbnail,
+            preview_object,
+            media_object,
+            media_object,
+        )
+
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+        html = oembed.get("html")
+        width = oembed.get("width")
+        height = oembed.get("height")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+        if not (html and width and height):
+            return
+        return MediaEmbed(
+            width=width,
+            height=height,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+        )
+
+# not an iframe
+class _ImgurScraper(_ThumbnailOnlyScraper):
+    URL_MATCH = re.compile(r"^https?\:\/\/(www\.)*imgur.com\/(gallery|t\/\w+|user\/\w+\/favorites)\/(\w+)$", re.IGNORECASE)
+
+    def __init__(self, url, maxwidth):
+        self.url = url
+        self.maxwidth = maxwidth
+
+    @classmethod
+    def matches(cls, url):
+        return cls.URL_MATCH.match(url)
+
+    def _make_media_object(self, oembed):
+        return {
+            "type": "imgur",
+            "oembed": oembed,
+        }
+
+    def scrape(self):
+        thumbnail_url, image_data = self._find_thumbnail_image()
+        if not thumbnail_url:
+            return None, None, None, None
+        if thumbnail_url.startswith('//'):
+            thumbnail_url = coerce_url_to_protocol(thumbnail_url, self.protocol)
+        if not image_data:
+            _, image_data = _fetch_url(thumbnail_url, referer=self.url)
+        if not image_data:
+            return None, None, None, None
+
+        uid = _filename_from_content(image_data)
+        image = str_to_image(image_data)
+        storage_url = upload_media(image, category='previews')
+        width, height = image.size
+        preview_object = {
+            'uid': uid,
+            'url': storage_url,
+            'width': width,
+            'height': height,
+        }
+
+        thumbnail = _prepare_image(image)
+
+        match = self.URL_MATCH.match(self.url)
+        if match and match.group(3):
+            self.url = match.group(3)
+
+        oembed = {
+            'html': '<blockquote class="imgur-embed-pub" lang="en" data-id="a/' + self.url + '"><a href="//imgur.com/' + self.url + '"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script>',
+            'thumbnail_url': thumbnail_url
+        }
+        media_object = self._make_media_object(oembed)
+
+        return (
+            thumbnail,
+            preview_object,
+            media_object,
+            media_object,
+        )
+
+    @classmethod
+    def media_embed(cls, media_object):
+        oembed = media_object["oembed"]
+        html = oembed.get("html")
+        public_thumbnail_url = oembed.get('thumbnail_url')
+        if not html:
+            return
+        # cannot use reddit's media embed iframe, the final dimensions are not known.
+        # rather than iframe to parent window communication for dynamic resizing, just
+        # render directly and skip the reddit media embed iframe.
+        return MediaEmbed(
+            width=1,
+            height=1,
+            content=html,
+            public_thumbnail_url=public_thumbnail_url,
+            direct_embed=True
+        )
 
 @memoize("media.embedly_services2", time=3600)
 def _fetch_embedly_service_data():
@@ -984,7 +1520,7 @@ def _fetch_embedly_services():
         else:
             g.log.warning("No embedly_api_key configured. Will not use "
                           "embed.ly.")
-            return []
+        return []
 
     service_data = _fetch_embedly_service_data()
 

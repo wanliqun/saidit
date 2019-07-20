@@ -24,7 +24,7 @@ from account import *
 from link import *
 from vote import *
 from report import *
-from subreddit import DefaultSR, AllSR, Frontpage, Subreddit
+from subreddit import DefaultSR, AllSR, HomeSR, Frontpage, Subreddit
 from pylons import i18n, request
 from pylons import app_globals as g
 from pylons.i18n import _
@@ -38,7 +38,6 @@ from r2.models import rules
 from collections import namedtuple
 from copy import deepcopy, copy
 import time
-
 
 class Listing(object):
     # class used in Javascript to manage these objects
@@ -75,13 +74,17 @@ class Listing(object):
                 item.render_replaced = True
         return builder_items
 
-    def listing(self, next_suggestions=None):
+    def listing(self, next_suggestions=None, sr_path=True):
         self.things, prev, next, bcount, acount = self.get_items()
 
         self.next_suggestions = next_suggestions
         self._max_num = max(acount, bcount)
         self.after = None
         self.before = None
+        # SaidIt: configurable home page
+        self.sr_path = sr_path
+        if c.site.is_homepage:
+            self.sr_path = False
 
         if self.nextprev and self.prev_link and prev and bcount > 1:
             p = self.params.copy()
@@ -199,7 +202,7 @@ class BannedListing(UserListing):
     @property
     def title(self):
         return _("users banned from"
-                 " /r/%(subreddit)s") % dict(subreddit=c.site.name)
+                 " /%(brander_community_abbr)s/%(subreddit)s") % dict(subreddit=c.site.name, brander_community_abbr=g.brander_community_abbr)
 
     def get_items(self, *a, **kw):
         items = UserListing.get_items(self, *a, **kw)
@@ -230,7 +233,7 @@ class MutedListing(UserListing):
     @property
     def title(self):
         return _("users muted from"
-                 " /r/%(subreddit)s") % dict(subreddit=c.site.name)
+                 " /%(brander_community_abbr)s/%(subreddit)s") % dict(brander_community_abbr=g.brander_community_abbr, subreddit=c.site.name)
 
     def get_items(self, *a, **kw):
         items = UserListing.get_items(self, *a, **kw)
@@ -252,7 +255,7 @@ class WikiBannedListing(BannedListing):
     @property
     def title(self):
         return _("wiki contibutors banned from"
-                 " /r/%(subreddit)s") % dict(subreddit=c.site.name)
+                 " /%(brander_community_abbr)s/%(subreddit)s") % dict(brander_community_abbr=g.brander_community_abbr, subreddit=c.site.name)
 
 class ContributorListing(UserListing):
     type = 'contributor'
@@ -260,7 +263,7 @@ class ContributorListing(UserListing):
     @property
     def title(self):
         return _("approved submitters for"
-                 " /r/%(subreddit)s") % dict(subreddit=c.site.name)
+                 " /%(brander_community_abbr)s/%(subreddit)s") % dict(brander_community_abbr=g.brander_community_abbr, subreddit=c.site.name)
 
     @property
     def form_title(self):
@@ -272,7 +275,7 @@ class WikiMayContributeListing(ContributorListing):
     @property
     def title(self):
         return _("approved wiki contributors"
-                 " for /r/%(subreddit)s") % dict(subreddit=c.site.name)
+                 " for /%(brander_community_abbr)s/%(subreddit)s") % dict(brander_community_abbr=g.brander_community_abbr, subreddit=c.site.name)
 
     @property
     def form_title(self):
@@ -281,7 +284,7 @@ class WikiMayContributeListing(ContributorListing):
 class InvitedModListing(UserListing):
     type = 'moderator_invite'
     form_title = _('invite moderator')
-    remove_self_title = _('you are a moderator of this subreddit. %(action)s')
+    remove_self_title = _('you are a moderator of this sub. %(action)s')
 
     @property
     def permissions_form(self):
@@ -318,7 +321,7 @@ class ModListing(InvitedModListing):
 
     @property
     def title(self):
-        return _("moderators of /r/%(subreddit)s") % dict(subreddit=c.site.name)
+        return _("moderators of /%(brander_community_abbr)s/%(subreddit)s") % dict(brander_community_abbr=g.brander_community_abbr, subreddit=c.site.name)
 
 class LinkListing(Listing):
     def __init__(self, *a, **kw):
@@ -394,7 +397,7 @@ class SpotlightListing(Listing):
                                  for keyword in keywords])
         self.navigable = kw.get('navigable', True)
         self.things = kw.get('organic_links', [])
-        self.show_placeholder = isinstance(c.site, (DefaultSR, AllSR))
+        self.show_placeholder = isinstance(c.site, (DefaultSR, AllSR, HomeSR, DynamicSR))
 
     def get_items(self):
         from r2.lib.template_helpers import replace_render

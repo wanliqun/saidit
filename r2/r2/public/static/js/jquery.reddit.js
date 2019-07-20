@@ -220,7 +220,7 @@ $.request = function(op, parameters, worker_in, block, type,
 
     /* set the subreddit name if there is one */
     if (r.config.post_site) 
-        parameters.r = r.config.post_site;
+        parameters[r.config.brander_community_abbr] = r.config.post_site;
 
     /* add the modhash if the user is logged in */
     if (r.config.logged) 
@@ -321,21 +321,87 @@ $.fn.updateThing = function(update) {
         var $down = $midcol.find('.arrow.'+down_cls+', .arrow.'+downmod_cls);
         var $elems = $($midcol).add($entry);
 
+        // CUSTOM: voting model
+        // Comment scores in the arrows (.comment .arrow .score) are hidden by default but can be exposed with CSS
+        var updateLinkVotes = $thing.hasClass('link') || $thing.hasClass('comment');
+        var zeroLabel = '-';
+        var $upvotes = false;
+        var $downvotes = false;
+        if (updateLinkVotes) {
+            $upvotes = $up.find('.score');
+            $downvotes = $down.find('.score');
+        }
+
+        // On main page, runs for every item i've voted on, and when voting
+        // On a comment's permalink page, it only runs on voting
+        // console.log('updateThing(): on ' + $thing.thing_id() + '  voted: ', update.voted);
         switch (update.voted) {
-            case 1:
-                $elems.addClass('likes').removeClass('dislikes unvoted');
-                $up.removeClass(up_cls).addClass(upmod_cls);
-                $down.removeClass(downmod_cls).addClass(down_cls);
+            case 1: // upvote
+                $up.addClass(upmod_cls).removeClass(up_cls);
+                $elems.addClass('likes').removeClass('unvoted');
+                if (updateLinkVotes) {
+                    var scorePostVote = isNaN(parseInt($upvotes.html())) ? 1 : parseInt($upvotes.html()) + 1; // "-" is 0, upvoted is 1
+                    $upvotes.html(scorePostVote);
+                    // console.log('updateThing(): voted up, newScore: ', scorePostVote);
+                }
             break;
-            case -1:
-                $elems.addClass('dislikes').removeClass('likes unvoted');
-                $up.removeClass(upmod_cls).addClass(up_cls);
-                $down.removeClass(down_cls).addClass(downmod_cls);
+            case 11: // unupvote
+                $up.addClass(up_cls).removeClass(upmod_cls);
+                $elems.removeClass('likes');
+                if (updateLinkVotes) {
+                    var scorePostVote = isNaN(parseInt($upvotes.html())) ? 0 : parseInt($upvotes.html()) - 1;
+                    if (scorePostVote == 0) {
+                        scorePostVote = zeroLabel;
+                    }
+                    $upvotes.html(scorePostVote);
+                    // console.log('updateThing() voted unup, newScore: ', scorePostVote);
+                }
             break;
-            default:
-                $elems.addClass('unvoted').removeClass('likes dislikes');
-                $up.removeClass(upmod_cls).addClass(up_cls);
-                $down.removeClass(downmod_cls).addClass(down_cls);
+            case -1: // downvote
+                $down.addClass(downmod_cls).removeClass(down_cls);
+                $elems.addClass('dislikes').removeClass('unvoted');
+                if (updateLinkVotes) {
+                    var scorePostVote = isNaN(parseInt($downvotes.html())) ? 1 : parseInt($downvotes.html()) + 1; // "-" is 0, upvoted is 1
+                    $downvotes.html(scorePostVote);
+                    // console.log('updateThing() voted down, newScore: ', scorePostVote);
+                }
+            break;
+            case -11: // undownvote
+                $down.addClass(down_cls).removeClass(downmod_cls);
+                $elems.removeClass('dislikes');
+                if (updateLinkVotes) {
+                    var scorePostVote = isNaN(parseInt($downvotes.html())) ? 0 : parseInt($downvotes.html()) - 1;
+                    if (scorePostVote == 0) {
+                        scorePostVote = zeroLabel;
+                    }
+                    $downvotes.html(scorePostVote);
+                    // console.log('updateThing() voted undown, newScore: ', scorePostVote);
+                }
+                
+            break;
+        }
+    // CUSTOM: voting model
+    // Used by CommentPane for comments (non-permalink pages)
+    } else if ('vote_state' in update) {
+        var $midcol = $thing.children('.midcol');
+        var $up = $midcol.find('.arrow.'+up_cls+', .arrow.'+upmod_cls);
+        var $down = $midcol.find('.arrow.'+down_cls+', .arrow.'+downmod_cls);
+        var $elems = $($midcol).add($entry);
+        // console.log('updateThing(): ' + $thing.thing_id() + ' vote_state: ', update.vote_state);
+        switch (update.vote_state) {
+            case 3: // onon
+                $up.addClass(upmod_cls).removeClass(up_cls);
+                $down.addClass(downmod_cls).removeClass(down_cls);
+                $elems.addClass('likes').addClass('dislikes').removeClass('unvoted');
+            break;
+            case 4: // onoff
+                $up.addClass(upmod_cls).removeClass(up_cls);
+                $elems.addClass('likes').removeClass('unvoted');
+            break;
+            case 5: // offon
+                $down.addClass(downmod_cls).removeClass(down_cls);
+                $elems.addClass('dislikes').removeClass('unvoted');
+            break;
         }
     }
 

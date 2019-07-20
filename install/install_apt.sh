@@ -28,6 +28,7 @@ source $RUNDIR/install.cfg
 # run an aptitude update to make sure python-software-properties
 # dependencies are found
 apt-get update
+apt-get -y upgrade
 
 # add the datastax cassandra repos (NB: this is required for
 # install_cassandra.sh to work correctly, and the non-existence of this
@@ -84,7 +85,8 @@ python-pylibmc=1.2.2-1~trusty5
 python-amqplib
 python-bcrypt
 python-snappy
-python-snudown
+gperf
+
 python-l2cs
 python-lxml
 python-kazoo

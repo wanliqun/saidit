@@ -103,6 +103,9 @@ from r2.lib.validator import (
     VLength,
     VLimit,
     VTarget,
+
+    # CUSTOM
+    VSiteTheme,
 )
 from r2.models import (
     Account,
@@ -132,6 +135,14 @@ from r2.models import (
     valid_admin_cookie,
     valid_feed,
     valid_otp_cookie,
+
+    # CUSTOM
+    AllSR,
+    HomeSR,
+    Home,
+    HomeMinus,
+    DynamicSR,
+    Dynamic
 )
 from r2.lib.db import tdb_cassandra
 
@@ -146,6 +157,10 @@ class UnloggedUser(FakeAccount):
         "pref_lang": VLang.validate_lang,
         "pref_hide_locationbar": bool,
         "pref_use_global_defaults": bool,
+
+	# CUSTOM: Site Theme
+	"pref_site_theme": VSiteTheme.validate_theme,
+	"pref_lightswitch": bool, 
     }
 
     def __init__(self, browser_langs, *a, **kw):
@@ -210,6 +225,11 @@ class UnloggedUser(FakeAccount):
             for k, (oldv, newv) in self._dirties.iteritems():
                 self._t[k] = newv
             self._to_cookie(self._t)
+
+    # SaidIt: Global Bans
+    @property
+    def is_global_banned(self):
+        return False
 
 def read_user_cookie(name):
     uname = c.user.name if c.user_is_loggedin else ""
@@ -284,17 +304,33 @@ valid_ascii_domain = re.compile(r'\A(\w[-\w]*\.)+[\w]+\Z')
 def set_subreddit():
     #the r parameter gets added by javascript for API requests so we
     #can reference c.site in api.py
-    sr_name = request.environ.get("subreddit", request.params.get('r'))
+    sr_name = request.environ.get("subreddit", request.params.get(g.brander_community_abbr))
     domain = request.environ.get("domain")
 
     can_stale = request.method.upper() in ('GET', 'HEAD')
 
+    # SaidIt configurable home page
     c.site = Frontpage
+    if g.site_index == 'all':
+        c.site = All
+    elif g.site_index == 'home':
+        c.site = Home
+    elif g.site_index == 'friends':
+        c.site = Friends
+    elif g.site_index == 'mod':
+        c.site = Mod
+    elif g.site_index == 'random':
+        c.site = Random
+
+    # SaidIt user configurable home page
+    if g.site_index_user_configurable == 'true':
+        c.site = Dynamic
+
     if not sr_name:
         #check for cnames
         cname = request.environ.get('legacy-cname')
         if cname:
-            sr = Subreddit._by_domain(cname) or Frontpage
+            sr = Subreddit._by_domain(cname) or Home
             domain = g.domain
             if g.domain_prefix:
                 domain = ".".join((g.domain_prefix, domain))
@@ -317,7 +353,7 @@ def set_subreddit():
                 found = {sr.name.lower() for sr in srs}
                 sr_names = filter(lambda name: name.lower() in found, sr_names)
                 sr_name = '+'.join(sr_names)
-                multi_path = '/r/' + sr_name
+                multi_path = '/' + g.brander_community_abbr + '/' + sr_name
                 c.site = MultiReddit(multi_path, srs)
             elif not c.error_page:
                 abort(404)
@@ -339,33 +375,46 @@ def set_subreddit():
                 c.site = ModMinus(exclude_srs)
             else:
                 c.site = Mod
+        elif base_sr == Home:
+            if exclude_srs:
+                c.site = HomeMinus(exclude_srs)
+            else:
+                c.site = Home
         else:
-            path = "/subreddits/search?q=%s" % sr_name
+            path = "/subs/search?q=%s" % sr_name
             abort(302, location=BaseController.format_output_url(path))
     else:
         try:
             c.site = Subreddit._by_name(sr_name, stale=can_stale)
         except NotFound:
             if Subreddit.is_valid_name(sr_name):
-                path = "/subreddits/search?q=%s" % sr_name
+                path = "/subs/search?q=%s" % sr_name
                 abort(302, location=BaseController.format_output_url(path))
             elif not c.error_page and not request.path.startswith("/api/login/") :
                 abort(404)
 
+    # SaidIt: configurable home page support
     #if we didn't find a subreddit, check for a domain listing
-    if not sr_name and isinstance(c.site, DefaultSR) and domain:
-        # Redirect IDN to their IDNA name if necessary
-        try:
-            idna = _force_unicode(domain).encode("idna")
-            if idna != domain:
-                path_info = request.environ["PATH_INFO"]
-                path = "/domain/%s%s" % (idna, path_info)
-                abort(302, location=BaseController.format_output_url(path))
-        except UnicodeError:
-            domain = ''  # Ensure valid_ascii_domain fails
-        if not c.error_page and not valid_ascii_domain.match(domain):
-            abort(404)
-        c.site = DomainSR(domain)
+    if not sr_name and domain:
+        tryForDomainSR = False
+        if g.site_index_user_configurable == 'true' and isinstance(c.site, DynamicSR):
+            tryForDomainSR = True
+        else:
+            if g.site_index == c.site.name:
+                tryForDomainSR = True
+        if tryForDomainSR:
+            # Redirect IDN to their IDNA name if necessary
+            try:
+                idna = _force_unicode(domain).encode("idna")
+                if idna != domain:
+                    path_info = request.environ["PATH_INFO"]
+                    path = "/domain/%s%s" % (idna, path_info)
+                    abort(302, location=BaseController.format_output_url(path))
+            except UnicodeError:
+                domain = ''  # Ensure valid_ascii_domain fails
+            if not c.error_page and not valid_ascii_domain.match(domain):
+                abort(404)
+            c.site = DomainSR(domain)
 
     if isinstance(c.site, FakeSubreddit):
         c.default_sr = True
@@ -467,16 +516,24 @@ def set_content_type():
             if user and not g.read_only_mode:
                 c.user = user
                 c.user_is_loggedin = True
-        if ext in ("mobile", "m") and not request.GET.get("keep_extension"):
+        # SaidIt CUSTOM: remove 'm', was never a valid extension just a subdomain, see https://github.com/reddit-archive/reddit/commit/43c91ea4798cb4f4f576c6b7b5ae460ce1f16aa4
+        if ext in ("mobile") and not request.GET.get("keep_extension"):
             try:
                 if request.cookies['reddit_mobility'] == "compact":
                     c.extension = "compact"
                     c.render_style = "compact"
             except (ValueError, KeyError):
                 c.suggest_compact = True
-        if ext in ("mobile", "m", "compact"):
+        # SaidIt CUSTOM: remove 'm', was never a valid extension just a subdomain, see https://github.com/reddit-archive/reddit/commit/43c91ea4798cb4f4f576c6b7b5ae460ce1f16aa4
+        if ext in ("mobile", "compact"):
             if request.GET.get("keep_extension"):
                 c.cookies['reddit_mobility'] = Cookie(ext, expires=NEVER)
+
+        # SaidIt CUSTOM
+        if ext in (g.extension_subdomain_mobile_v2):
+            c.cookies['reddit_mobility'] = Cookie(ext, expires=NEVER)
+            c.extension = g.extension_subdomain_mobile_v2_render_style
+            c.render_style = g.extension_subdomain_mobile_v2_render_style
 
     # allow content and api calls to set an loid
     if is_api() or c.render_style in ("html", "mobile", "compact"):
@@ -736,7 +793,8 @@ def enforce_https():
             redirect_url = make_url_https(request.fullurl)
 
     # These are all safe to redirect to HTTPS
-    if c.render_style in {"html", "compact", "mobile"} and not is_api_request:
+    # SaidIt CUSTOM
+    if c.render_style in {"html", "compact", "mobile", g.extension_subdomain_mobile_v2_render_style} and not is_api_request:
         want_redirect = (feature.is_enabled("force_https") or
                          feature.is_enabled("https_redirect"))
         if not c.secure and want_redirect:

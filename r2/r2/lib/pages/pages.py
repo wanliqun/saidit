@@ -68,6 +68,11 @@ from r2.models import (
     Trophy,
     USER_FLAIR,
     make_feedurl,
+
+    # CUSTOM
+    HomeSR,
+    Home,
+    DynamicSR,
 )
 from r2.models.bidding import Bid
 from r2.models.gold import (
@@ -297,6 +302,25 @@ class Reddit(Templated):
         if feature.is_enabled("expando_nsfw_flow"):
             self.feature_expando_nsfw_flow = True
 
+        # SaidIt: chat
+        self.show_sidebar_chat = False
+        if feature.is_enabled('chat') and c.user.pref_chat_enabled:
+            if isinstance(c.site, Subreddit) and c.site.chat_enabled:
+                self.show_sidebar_chat = True
+            elif isinstance(c.site, HomeSR) and g.live_config['chat_home'] == 'true':
+                self.show_sidebar_chat = True
+            elif isinstance(c.site, AllSR) and g.live_config['chat_all'] == 'true':
+                self.show_sidebar_chat = True
+            elif isinstance(c.site, DefaultSR) and g.live_config['chat_front'] == 'true':
+                self.show_sidebar_chat = True
+            elif isinstance(c.site, DynamicSR):
+                if c.site.name == g.front_name and g.live_config['chat_front'] == 'true':
+                    self.show_sidebar_chat = True
+                elif c.site.name == g.all_name and g.live_config['chat_all'] == 'true':
+                    self.show_sidebar_chat = True
+                elif c.site.name == g.home_name and g.live_config['chat_home'] == 'true':
+                    self.show_sidebar_chat = True
+
         # generate a canonical link for google
         canonical_url = UrlParser(canonical_link or request.url)
         canonical_url.canonicalize()
@@ -343,11 +367,12 @@ class Reddit(Templated):
                     extra_class=infotext_class,
                     show_icon=infotext_show_icon,
                 )
-            elif isinstance(c.site, AllMinus) and not c.user.gold:
-                self.infobar = RedditInfoBar(message=strings.all_minus_gold_only,
-                                       extra_class="gold")
+            # CUSTOM: degolding
+            # elif isinstance(c.site, AllMinus) and not c.user.gold:
+            #    self.infobar = RedditInfoBar(message=strings.all_minus_gold_only,
+            #                           extra_class="gold")
 
-            if not c.user_is_loggedin:
+            if 0:
                 if getattr(self, "show_welcomebar", True):
                     self.welcomebar = WelcomeBar()
                 if self.show_newsletterbar:
@@ -419,10 +444,14 @@ class Reddit(Templated):
             c.render_style == "html" and
             c.user_is_loggedin and
             (
-                isinstance(c.site, (DefaultSR, AllSR, ModSR, LabeledMulti)) or
+                isinstance(c.site, (DefaultSR, AllSR, HomeSR, ModSR, LabeledMulti, DynamicSR)) or
                 c.site.name == g.live_config["listing_chooser_explore_sr"]
             )
         )
+
+        # CUSTOM: Listing Chooser flag
+        if self.show_chooser and not feature.is_enabled('listing_chooser'):
+            self.show_chooser = False
 
         self.toolbars = self.build_toolbars()
 
@@ -477,24 +506,28 @@ class Reddit(Templated):
             "wikirecentrevisions",
             css_class="wikiaction-revisions",
             dest="/wiki/revisions",
-            data=data_attrs('wikirevisions')))
+            data=data_attrs('wikirevisions'),
+            sr_path=not c.site.is_homepage))
         buttons.append(NamedButton(
             "wikipageslist",
             css_class="wikiaction-pages",
             dest="/wiki/pages",
-            data=data_attrs('wikipages')))
+            data=data_attrs('wikipages'),
+            sr_path=not c.site.is_homepage))
 
         if moderator:
             buttons.append(NamedButton(
                 'wikibanned',
                 css_class='reddit-ban access-required',
                 dest='/about/wikibanned',
-                data=data_attrs('wikibanned')))
+                data=data_attrs('wikibanned'),
+                sr_path=not c.site.is_homepage))
             buttons.append(NamedButton(
                 'wikicontributors',
                 css_class='reddit-contributors access-required',
                 dest='/about/wikicontributors',
-                data=data_attrs('wikicontributors')))
+                data=data_attrs('wikicontributors'),
+                sr_path=not c.site.is_homepage))
 
         return SideContentBox(_('wiki tools'),
                       [NavMenu(buttons,
@@ -631,6 +664,27 @@ class Reddit(Templated):
                               _id="moderation_tools",
                               collapsible=True)
 
+    def wikiactionsbox(self):
+        """generates wikibox at the top of the page instead of sidebar"""
+
+        psq = PaneStack(css_class='spacer')
+
+        if not isinstance(c.site, FakeSubreddit):
+            moderator = c.user_is_loggedin and (c.user_is_admin or
+                                          c.site.is_moderator(c.user))
+            wiki_moderator = c.user_is_loggedin and (
+                c.user_is_admin
+                or c.site.is_moderator_with_perms(c.user, 'wiki'))
+            if self.show_wiki_actions:
+                menu = self.wiki_actions_menu(moderator=wiki_moderator)
+                psq.append(menu)
+
+        elif self.show_wiki_actions:
+            psq.append(self.wiki_actions_menu())
+
+        return psq
+
+
     def rightbox(self):
         """generates content in <div class="rightbox">"""
 
@@ -639,13 +693,14 @@ class Reddit(Templated):
         if self.searchbox:
             ps.append(SearchForm())
 
+        # SaidIt: HomeSR, DynamicSR
         sidebar_message = g.live_config.get("sidebar_message")
-        if sidebar_message and isinstance(c.site, DefaultSR):
+        if sidebar_message and isinstance(c.site, (DefaultSR, AllSR, HomeSR, DynamicSR)):
             ps.append(SidebarMessage(sidebar_message[0]))
 
         gold_sidebar_message = g.live_config.get("gold_sidebar_message")
         if (c.user_is_loggedin and c.user.gold and
-                gold_sidebar_message and isinstance(c.site, DefaultSR)):
+                gold_sidebar_message and isinstance(c.site, (HomeSR, AllSR, DefaultSR, DynamicSR))):
             ps.append(SidebarMessage(gold_sidebar_message[0],
                                      extra_class="gold"))
 
@@ -656,6 +711,7 @@ class Reddit(Templated):
             from r2.lib.pages.admin_pages import AdminNotesSidebar
             notebar = AdminNotesSidebar('domain', c.site.domain)
             ps.append(notebar)
+
 
         if isinstance(c.site, Subreddit) and c.user_is_admin:
             from r2.lib.pages.admin_pages import AdminNotesSidebar
@@ -668,8 +724,13 @@ class Reddit(Templated):
         if (isinstance(c.site, Filtered) and not
             (isinstance(c.site, AllSR) and not c.user.gold)):
             ps.append(FilteredInfoBar())
+        elif isinstance(c.site, HomeSR):
+            pass
+        elif isinstance(c.site, DynamicSR):
+            pass
         elif isinstance(c.site, AllSR):
-            ps.append(AllInfoBar(c.site, c.user))
+            if g.all_show_info_bar == 'true':
+                ps.append(AllInfoBar(c.site, c.user))
         elif isinstance(c.site, ModSR):
             ps.append(ModSRInfoBar())
 
@@ -690,9 +751,9 @@ class Reddit(Templated):
                     box = SubscriptionBox(srs, multi_text=strings.mod_multi)
                 else:
                     box = SubscriptionBox(srs)
-                ps.append(SideContentBox(_('these subreddits'), [box]))
+                ps.append(SideContentBox(_('includes these %s' % g.brander_community_plural), [box]))
 
-        user_banned = c.user_is_loggedin and c.site.is_banned(c.user)
+        user_banned = c.user_is_loggedin and (c.site.is_banned(c.user) or c.user.is_global_banned)
 
         if (self.submit_box
                 and (c.user_is_loggedin or not g.read_only_mode)
@@ -783,35 +844,71 @@ class Reddit(Templated):
         user_disabled_ads = c.user.gold and c.user.pref_hide_ads
         show_adbox = c.site.allow_ads and not (user_disabled_ads or g.disable_ads)
 
-        # don't show the subreddit info bar on cnames unless the option is set
-        if not isinstance(c.site, FakeSubreddit):
-            ps.append(SubredditInfoBar())
-            moderator = c.user_is_loggedin and (c.user_is_admin or
-                                          c.site.is_moderator(c.user))
-            wiki_moderator = c.user_is_loggedin and (
-                c.user_is_admin
-                or c.site.is_moderator_with_perms(c.user, 'wiki'))
-            if self.show_wiki_actions:
-                menu = self.wiki_actions_menu(moderator=wiki_moderator)
-                ps.append(menu)
-            if moderator:
-                ps.append(self.sr_admin_menu())
-            if show_adbox:
-                ps.append(Ads())
-            no_ads_yet = False
-        elif self.show_wiki_actions:
-            ps.append(self.wiki_actions_menu())
 
         if self.create_reddit_box and c.user_is_loggedin:
             if (c.user._age.days >= g.min_membership_create_community and
                     c.user.can_create_subreddit):
                 subtitles = get_funny_translated_string("create_subreddit", 2)
                 data_attrs = {'event-action': 'createsubreddit'}
-                ps.append(SideBox(_('Create your own subreddit'),
-                           '/subreddits/create', 'create',
+                ps.append(SideBox(_('Create your own sub'),
+                           '/subs/create', 'create',
                            subtitles=subtitles,
                            data_attrs=data_attrs,
                            show_cover = True))
+
+        # SaidIt: sidebar Chat
+        # WARNING: HomeSR extends AllSR, first on purpose
+        if feature.is_enabled('chat') and c.user.pref_chat_enabled:
+            from r2.lib.pages.chat import SidebarChat
+            if isinstance(c.site, Subreddit):
+                if c.site.chat_enabled:
+                    notebar = SidebarChat('subreddit', c.site.name)
+                    ps.append(notebar)
+            elif isinstance(c.site, HomeSR):
+                if g.live_config['chat_home'] == 'true':
+                    notebar = SidebarChat('subreddit', g.chat_home_channel)
+                    ps.append(notebar)
+            elif isinstance(c.site, AllSR):
+                if g.live_config['chat_all'] == 'true':
+                    notebar = SidebarChat('subreddit', g.chat_all_channel)
+                    ps.append(notebar)
+            elif isinstance(c.site, DefaultSR):
+                if g.live_config['chat_front'] == 'true':
+                    notebar = SidebarChat('subreddit', g.chat_front_channel)
+                    ps.append(notebar)
+            elif isinstance(c.site, DynamicSR):
+                if c.site.name == g.front_name and g.live_config['chat_front'] == 'true':
+                    notebar = SidebarChat('subreddit', g.chat_front_channel)
+                    ps.append(notebar)
+                elif c.site.name == g.all_name and g.live_config['chat_all'] == 'true':
+                    notebar = SidebarChat('subreddit', g.chat_all_channel)
+                    ps.append(notebar)
+                elif c.site.name == g.home_name and g.live_config['chat_home'] == 'true':
+                    notebar = SidebarChat('subreddit', g.chat_home_channel)
+                    ps.append(notebar)
+
+        # don't show the subreddit info bar on cnames unless the option is set
+        if not isinstance(c.site, FakeSubreddit):
+            ps.append(SubredditInfoBar())
+            moderator = c.user_is_loggedin and (c.user_is_admin or
+                                          c.site.is_moderator(c.user))
+        # SaidIt: wiki actions menu moved elsewhere
+        #     wiki_moderator = c.user_is_loggedin and (
+        #         c.user_is_admin
+        #         or c.site.is_moderator_with_perms(c.user, 'wiki'))
+        #     if self.show_wiki_actions:
+        #         menu = self.wiki_actions_menu(moderator=wiki_moderator)
+        #         ps.append(menu)
+            if moderator:
+                ps.append(self.sr_admin_menu())
+        #     if show_adbox:
+        #         ps.append(Ads())
+        #     no_ads_yet = False
+
+        # SaidIt: wiki actions menu moved elsewhere
+        # elif self.show_wiki_actions:
+        #     ps.append(self.wiki_actions_menu())
+
 
         if c.default_sr:
             hook = hooks.get_hook('home.add_sidebox')
@@ -833,9 +930,9 @@ class Reddit(Templated):
                 if num_not_shown > 0:
                     more_text = _("...and %d more") % (num_not_shown)
                 else:
-                    more_text = _("about moderation team")
+                    more_text = _("moderation team")
 
-                is_admin_sr = '/r/%s' % c.site.name == g.admin_message_acct
+                is_admin_sr = '/%s/%s' % (g.brander_community_abbr, c.site.name) == g.admin_message_acct
 
                 if is_admin_sr:
                     label = _('message the admins')
@@ -845,7 +942,7 @@ class Reddit(Templated):
                 wrapped_moderators = [WrappedUser(mod) for mod in moderators
                     if not mod._deleted]
                 helplink = HelpLink(
-                    "/message/compose?to=%%2Fr%%2F%s" % c.site.name,
+                    "/message/compose?to=%%2F%s%%2F%s" % (g.brander_community_abbr, c.site.name),
                     label,
                     access_required=not is_admin_sr,
                     data_attrs={
@@ -855,11 +952,18 @@ class Reddit(Templated):
                     })
 
                 mod_href = c.site.path + 'about/moderators'
+
+                # Public modlogs
+                mod_two_href = c.site.path + 'about/log'
+                more_two_text = _("moderation log")
+
                 ps.append(SideContentBox(_('moderators'),
                                          wrapped_moderators,
                                          helplink = helplink,
                                          more_href = mod_href,
-                                         more_text = more_text))
+                                         more_text = more_text,
+                                         more_two_href = mod_two_href,
+                                         more_two_text = more_two_text))
 
         if no_ads_yet and show_adbox:
             ps.append(Ads())
@@ -867,12 +971,14 @@ class Reddit(Templated):
                 ps.append(Goldvertisement())
 
         if c.user.pref_clickgadget and c.recent_clicks:
-            ps.append(SideContentBox(_("Recently viewed links"),
-                                     [ClickGadget(c.recent_clicks)]))
+            pass
+            # ps.append(SideContentBox(_("Recently viewed links"),
+            #                         [ClickGadget(c.recent_clicks)]))
 
         if c.user_is_loggedin:
-            activity_link = AccountActivityBox()
-            ps.append(activity_link)
+            pass
+            # activity_link = AccountActivityBox()
+            # ps.append(activity_link)
 
         return ps
 
@@ -909,9 +1015,31 @@ class Reddit(Templated):
                             (g.https_endpoint, quote(request.fullpath)),
                         target = "_self",
                     )]
+            
+            # CUSTOM: Site Theme
+            if c.user.pref_lightswitch:
+                buttons += [JsButton('lights off',
+                    onclick = "lightswitch(); return false;",
+                    css_class = "pref-lightswitch pref-lightswitch-on")]
+            else:
+                buttons += [JsButton('lights on',
+                    onclick = "lightswitch(); return false;",
+                    css_class = "pref-lightswitch pref-lightswitch-off")]
+
             buttons += [NamedButton("prefs", False,
                                   css_class = "pref-lang")]
         else:
+
+            # CUSTOM: Site Theme
+            if c.user.pref_lightswitch:
+               buttons += [JsButton('lights off',
+                    onclick = "lightswitch(); return false;",
+                    css_class = "pref-lightswitch pref-lightswitch-on")]
+            else:
+                buttons += [JsButton('lights on',
+                    onclick = "lightswitch(); return false;",
+                    css_class = "pref-lightswitch pref-lightswitch-off")]
+
             lang = c.lang.split('-')[0] if c.lang else ''
             lang_name = g.lang_name.get(lang) or [lang, '']
             lang_name = "".join(lang_name)
@@ -930,16 +1058,21 @@ class Reddit(Templated):
                             NamedButton('gilded'),
                             ]
         else:
-            main_buttons = [NamedButton('hot', dest='', aliases=['/hot']),
-                            NamedButton('new'),
-                            NamedButton('rising'),
-                            NamedButton('controversial'),
-                            NamedButton('top'),
+            is_sr_path = not c.site.is_homepage
+            main_buttons = [NamedButton('hot', dest='', aliases=['/hot'], sr_path=is_sr_path),
+                            NamedButton('new', sr_path=is_sr_path),
+                            # NamedButton('rising', sr_path=is_sr_path),
+                            NamedButton(g.voting_upvote_path, sr_path=is_sr_path),
+                            NamedButton(g.voting_controversial_path, sr_path=is_sr_path),
+                            NamedButton('top', sr_path=is_sr_path),
                             ]
 
-            if c.site.allow_gilding:
+            if g.gold_gilding_enabled == 'true' and c.site.allow_gilding:
                 main_buttons.append(NamedButton('gilded',
                                                 aliases=['/comments/gilded']))
+
+            if feature.is_enabled('sr_comments_tab'):
+                main_buttons.append(NamedButton('comments', sr_path=is_sr_path))
 
             mod = False
             if c.user_is_loggedin:
@@ -947,15 +1080,16 @@ class Reddit(Templated):
                            or c.site.is_moderator_with_perms(c.user, 'wiki'))
             if c.site._should_wiki and (c.site.wikimode != 'disabled' or mod):
                 if not g.disable_wiki:
-                    main_buttons.append(NavButton('wiki', 'wiki'))
+                    main_buttons.append(NavButton('wiki', 'wiki', sr_path=is_sr_path))
 
-            if (isinstance(c.site, (Subreddit, DefaultSR, MultiReddit)) and
+            if g.ads_promos_enabled == 'true':
+                if (isinstance(c.site, (Subreddit, DefaultSR, MultiReddit)) and
                     c.site.allow_ads):
-                main_buttons.append(NavButton(menu.promoted, 'ads'))
+                    main_buttons.append(NavButton(menu.promoted, 'ads', sr_path=is_sr_path))
 
         more_buttons = []
 
-        if c.user_is_loggedin and c.site.allow_ads:
+        if g.ads_promos_enabled == 'true' and c.user_is_loggedin and c.site.allow_ads:
             if c.user_is_sponsor:
                 sponsor_button = NavButton(
                     menu.sponsor, dest='/sponsor', sr_path=False)
@@ -972,10 +1106,19 @@ class Reddit(Templated):
         if more_buttons:
             toolbar.append(NavMenu(more_buttons, title=menu.more, type='tabdrop'))
 
-        if not isinstance(c.site, DefaultSR):
-            func = 'subreddit'
-            if isinstance(c.site, DomainSR):
-                func = 'domain'
+        # SaidIt: configurable home page
+        func = 'subreddit'
+        if isinstance(c.site, DomainSR):
+            func = 'domain'
+        elif isinstance(c.site, (HomeSR, AllSR, DefaultSR, DynamicSR)):
+            func = 'subredditheadertitle'
+            if c.site.is_homepage:
+                func = 'subredditnositelink'
+
+        if c.render_style == g.extension_subdomain_mobile_v2_render_style:
+            # NOTE: fails for url https://www.reddit.local/try.compact?dest=/.mobile your redirect when appending 'mobile' or when visiting simple.reddit.local, comment out to see page
+            toolbar.insert(1, PageNameNav(func))
+        else:
             toolbar.insert(0, PageNameNav(func))
 
         return toolbar
@@ -1062,6 +1205,9 @@ class Reddit(Templated):
             classes.update(self.extra_page_classes)
         if self.supplied_page_classes:
             classes.update(self.supplied_page_classes)
+        
+        # CUSTOM: site theme
+        classes.add(c.user.pref_site_theme.replace('_','-'))
 
         return classes
 
@@ -1080,6 +1226,7 @@ class AccountActivityBox(Templated):
         super(AccountActivityBox, self).__init__()
 
 
+
 class RedditFooter(CachedTemplate):
     def cachable_attrs(self):
         return [('path', request.path),
@@ -1088,49 +1235,45 @@ class RedditFooter(CachedTemplate):
     def __init__(self):
         self.nav = [
             NavMenu([
-                    NamedButton("blog", False, dest="/blog"),
-                    OffsiteButton("about", "https://about.reddit.com/"),
-                    NamedButton("source_code", False, dest="/code"),
-                    NamedButton("advertising", False),
-                    NamedButton("jobs", False),
+                    NavButton(_("welcome to saidit"), "/s/SaidIt/comments/37r/welcome_to_saiditnet/"),
+                    NavButton(_("official sub"), "/s/SaidIt"),
+                    NavButton(_("canary"), "/s/SaiditCanary"),
+                    NavButton(_("wiki & faq"), "/wiki/index", sr_path=False),
                 ],
                 title = _("about"),
                 type = "flat_vert",
                 separator = ""),
 
             NavMenu([
-                    NamedButton("rules", False),
-                    OffsiteButton(_("FAQ"), "https://reddit.zendesk.com"),
-                    NamedButton("wiki", False),
-                    NamedButton("reddiquette", False, dest="/wiki/reddiquette"),
-                    NamedButton("transparency", False, dest="/wiki/transparency"),
-                    NamedButton("contact", False),
+                    NavButton(_("list of subs"), "/subs", sr_path=False),
+                    NavButton(_("contact"), "/s/help"),
+                    NavButton(_("terms & content policy"), "/s/SaidIt/comments/j1/the_saiditnet_terms_and_content_policy/"),
                 ],
                 title = _("help"),
                 type = "flat_vert",
                 separator = ""),
 
             NavMenu([
-                    OffsiteButton(_("Reddit for iPhone"),
-                        "https://itunes.apple.com/us/app/reddit-the-official-app/id1064216828?mt=8"),
-                    OffsiteButton(_("Reddit for Android"),
-                        "https://play.google.com/store/apps/details?id=com.reddit.frontpage"),
-                    OffsiteButton(_("mobile website"), "https://m.reddit.com"),
-                    NamedButton("buttons", False),
+
+                    OffsiteButton(_("open source code"), "https://github.com/libertysoft3/saidit", retain_extension=False),
+                    OffsiteButton(_("apps & clients"), "https://saidit.net/s/SaidIt/wiki/index#wiki_apps_.26amp.3B_clients"),
+                    OffsiteButton(_("mobile site"), "https://m.saidit.net"),
                 ],
-                title = _("apps & tools"),
+                title = _("tech"),
                 type = "flat_vert",
                 separator = ""),
 
             NavMenu([
-                    NamedButton("gold", False, dest="/gold/about", css_class="buygold"),
-                    OffsiteButton(_("redditgifts"), "//redditgifts.com"),
+                    OffsiteButton(_("patreon"), "https://www.patreon.com/SaidIt", retain_extension=False),
+                    OffsiteButton(_("cryptocurrency"), "https://saidit.net/s/SaidIt/comments/jf/cryptocurrency_support_for_saiditnet/"),
                 ],
-                title = _("<3"),
+                title = _("donate"),
                 type = "flat_vert",
                 separator = "")
         ]
         CachedTemplate.__init__(self)
+
+
 
 class ClickGadget(Templated):
     def __init__(self, links, *a, **kw):
@@ -1224,10 +1367,11 @@ class HelpLink(Templated):
 
 class SideContentBox(Templated):
     def __init__(self, title, content, helplink=None, _id=None, extra_class=None,
-                 more_href=None, more_text="more", collapsible=False):
+                 more_href=None, more_text="more", more_two_href=None, more_two_text="", collapsible=False):
         Templated.__init__(self, title=title, helplink = helplink,
                            content=content, _id=_id, extra_class=extra_class,
                            more_href = more_href, more_text = more_text,
+                           more_two_href = more_two_href, more_two_text = more_two_text,
                            collapsible=collapsible)
 
 class SideBox(CachedTemplate):
@@ -1250,33 +1394,32 @@ class PrefsPage(Reddit):
 
     extension_handling = False
 
-    def __init__(self, show_sidebar = False, title=None, *a, **kw):
-        title = title or "%s (%s)" % (_("preferences"), c.site.name.strip(' '))
+    def __init__(self, show_sidebar = False, title=None, location=None, *a, **kw):
+        title = "%s : %s" % (_("preferences"), title or location)
         Reddit.__init__(self, show_sidebar = show_sidebar,
                         title=title,
                         *a, **kw)
 
     def build_toolbars(self):
-        buttons = [NavButton(menu.options, ''),
-                   NamedButton('apps')]
+        buttons = [NavButton(menu.options, '', sr_path=False),
+                   NamedButton('apps', sr_path=False)]
 
-        if c.user.pref_private_feeds:
-            buttons.append(NamedButton('feeds'))
+        # if c.user.pref_private_feeds:
+        #    buttons.append(NamedButton('feeds', sr_path=False))
 
         buttons.extend([
-            NamedButton('friends'),
-            NamedButton('blocked'),
-            NamedButton('update'),
+            NamedButton('friends', sr_path=False),
+            NamedButton('blocked', sr_path=False),
+            NamedButton('update', sr_path=False),
         ])
 
         if c.user.name in g.admins:
-            buttons += [NamedButton('security')]
+            buttons += [NamedButton('security', sr_path=False)]
 
-        buttons += [NamedButton('deactivate')]
+        buttons += [NamedButton('deactivate', sr_path=False)]
 
         return [PageNameNav('nomenu', title = _("preferences")),
                 NavMenu(buttons, base_path = "/prefs", type="tabmenu")]
-
 
 class PrefOptions(Templated):
     """Preference form for updating language and display options"""
@@ -1446,10 +1589,12 @@ class BoringPage(Reddit):
         Reddit.__init__(self, **context)
 
     def build_toolbars(self):
-        if not isinstance(c.site, DefaultSR):
-            return [PageNameNav('subreddit', title = self.pagename)]
-        else:
+        if isinstance(c.site, (HomeSR, DynamicSR)):
             return [PageNameNav('nomenu', title = self.pagename)]
+        elif isinstance(c.site, (AllSR)):
+            return [PageNameNav('subredditnositelink', title = self.pagename)]
+        else:
+            return [PageNameNav('subreddit', title = self.pagename)]
 
 class HelpPage(BoringPage):
     def build_toolbars(self):
@@ -1761,9 +1906,10 @@ class LinkInfoPage(Reddit):
         Reddit.__init__(self, title = title, short_description=short_description, robots=robots, *a, **kw)
 
     def _build_og_data(self, link_title, meta_description):
-        sr_fragment = "/r/" + c.site.name if not c.default_sr else get_domain()
+        sr_fragment = "/" + g.brander_community_abbr + "/" + c.site.name if not c.default_sr else get_domain()
         data = {
-            "site_name": "reddit",
+            # CUSTOM: brander
+            "site_name": g.brander_site,
             "title": u"%s • %s" % (link_title, sr_fragment),
             "description": self._build_og_description(meta_description),
             "ttl": "600",  # re-fetch frequently to update vote/comment count
@@ -1849,7 +1995,7 @@ class LinkInfoPage(Reddit):
         # at the end, we'd like to always show the whole subreddit name, so
         # let's truncate the title while still ensuring the entire thing is
         # under the limit.
-        sr_fragment = u" • /r/" + c.site.name if not c.default_sr else get_domain()
+        sr_fragment = u" • /" + g.brander_community_abbr + "/" + c.site.name if not c.default_sr else get_domain()
         max_link_title_length = 70 - len(sr_fragment)
 
         return {
@@ -2154,10 +2300,17 @@ class CommentPane(Templated):
                         update['friend'] = True
                     if is_enemy:
                         update['enemy'] = True
-                    if t.likes:
-                        update['voted'] = 1
-                    if t.likes is False:
-                        update['voted'] = -1
+
+                    # CUSTOM: voting model, pass vote_state instead of voted
+                    if t.likes and t.dislikes:
+                        update['vote_state'] = 3
+                    elif t.likes and not t.dislikes:
+                        update['vote_state'] = 4
+                    elif not t.likes and t.dislikes:
+                        update['vote_state'] = 5
+                    else:
+                        update['vote_state'] = 0
+
                     if t.saved:
                         update['saved'] = True
                     if t.user_gilded:
@@ -2212,7 +2365,7 @@ class EditReddit(Reddit):
             is_moderator = c.user_is_loggedin and \
                 c.site.is_moderator(c.user) or c.user_is_admin
 
-            title = (_('subreddit settings') if is_moderator else
+            title = (_('sub settings') if is_moderator else
                      _('about %(site)s') % dict(site=c.site.name))
 
         Reddit.__init__(self, title=title, *a, **kw)
@@ -2236,37 +2389,43 @@ class SubredditsPage(Reddit):
                         *a, **kw)
         self.searchbar = SearchBar(
             prev_search = prev_search,
-            header=_('search subreddits by name'),
+            header=_('search subs by name'),
             search_params={},
             simple=True,
             subreddit_search=True,
-            search_path="/subreddits/search",
+            search_path="/subs/search",
         )
-        self.sr_infobar = InfoBar(message = strings.sr_subscribe)
+        message = strings.sr_subscribe % {
+                'community_plural': g.brander_community_plural,
+                'subscribed_name': g.front_name,
+                'unsubscribe_link': '/prefs#subscriptions',
+            }
+        self.sr_infobar = InfoBar(message = message)
         self.interestbar = InterestBar(True) if show_interestbar else None
 
     def build_toolbars(self):
-        buttons =  [NavButton(menu.popular, ""),
-                    NamedButton("new")]
+        buttons =  [NavButton(menu.popular, "", sr_path=False),
+                    NamedButton("new", sr_path=False)]
         if c.user_is_admin:
-            buttons.append(NamedButton("banned"))
+            buttons.append(NamedButton("banned", sr_path=False))
         if c.user.employee:
-            buttons.append(NamedButton("employee"))
+            buttons.append(NamedButton("employee", sr_path=False))
         if c.user.gold or c.user.gold_charter:
-            buttons.append(NamedButton("gold"))
+            buttons.append(NamedButton("gold", sr_path=False))
         if c.user_is_admin:
-            buttons.append(NamedButton("quarantine"))
+            buttons.append(NamedButton("quarantine", sr_path=False))
         if c.user_is_admin:
-            buttons.append(NamedButton("featured"))
+            buttons.append(NamedButton("featured", sr_path=False))
         if c.user_is_loggedin:
             #add the aliases to "my reddits" stays highlighted
             buttons.append(NamedButton("mine",
-                                       aliases=['/subreddits/mine/subscriber',
-                                                '/subreddits/mine/contributor',
-                                                '/subreddits/mine/moderator']))
+                                       aliases=['/subs/mine/subscriber',
+                                                '/subs/mine/contributor',
+                                                '/subs/mine/moderator'],
+                                        sr_path=False))
 
         return [PageNameNav('subreddits'),
-                NavMenu(buttons, base_path = '/subreddits', type="tabmenu")]
+                NavMenu(buttons, base_path = '/subs', type="tabmenu")]
 
     def content(self):
         return self.content_stack((self.interestbar, self.searchbar,
@@ -2280,7 +2439,7 @@ class SubredditsPage(Reddit):
         subscribe_box = SubscriptionBox(srs,
                                         multi_text=strings.subscribed_multi)
         num_reddits = len(subscribe_box.srs)
-        ps.append(SideContentBox(_("your front page subreddits (%s)") %
+        ps.append(SideContentBox(_("your front page subs (%s)") %
                                  num_reddits, [subscribe_box]))
         return ps
 
@@ -2306,7 +2465,8 @@ class ProfilePage(Reddit):
     """Container for a user's profile page.  As such, the Account
     object of the user must be passed in as the first argument, along
     with the current sub-page (to determine the title to be rendered
-    on the page)"""
+    on the page) CUSTOM SAIDIT: ,
+                   NamedButton('gilded') removed"""
 
     searchbox         = False
     create_reddit_box = False
@@ -2319,30 +2479,30 @@ class ProfilePage(Reddit):
 
     def build_toolbars(self):
         path = "/user/%s/" % self.user.name
-        main_buttons = [NavButton(menu.overview, '/', aliases = ['/overview']),
-                   NamedButton('comments'),
-                   NamedButton('submitted'),
-                   NamedButton('gilded')]
+        main_buttons = [NavButton(menu.overview, '/', aliases = ['/overview'], sr_path=False),
+                   NamedButton('comments', sr_path=False),
+                   NamedButton('submitted', sr_path=False)]
 
         if votes_visible(self.user):
-            main_buttons += [
-                NamedButton('upvoted'),
-                NamedButton('downvoted'),
-            ]
+            """main_buttons += [
+                NamedButton('upvoted', sr_path=False),
+                NamedButton('downvoted', sr_path=False)]
+            """
+            
 
         if c.user_is_loggedin and (c.user._id == self.user._id or
                                    c.user_is_admin):
-            main_buttons += [NamedButton('hidden'), NamedButton('saved')]
+            main_buttons += [NamedButton('hidden', sr_path=False), NamedButton('saved', sr_path=False)]
 
         if c.user_is_sponsor:
-            main_buttons += [NamedButton('promoted')]
+            main_buttons += [NamedButton('promoted', sr_path=False)]
 
         toolbar = [PageNameNav('nomenu', title = self.user.name),
                    NavMenu(main_buttons, base_path = path, type="tabmenu")]
 
         if c.user_is_admin:
             from admin_pages import AdminProfileMenu
-            toolbar.append(AdminProfileMenu(path))
+            toolbar.append(AdminProfileMenu(path, self.user))
 
         return toolbar
 
@@ -2367,13 +2527,13 @@ class ProfilePage(Reddit):
     def rightbox(self):
         rb = Reddit.rightbox(self)
 
-        tc = TrophyCase(self.user)
-        helplink = HelpLink("/wiki/awards", _("what's this?"))
-        scb = SideContentBox(title=_("trophy case"),
-                 helplink=helplink, content=[tc],
-                 extra_class="trophy-area")
+        # tc = TrophyCase(self.user)
+        # helplink = HelpLink("/wiki/awards", _("what's this?"))
+        # scb = SideContentBox(title=_("trophy case"),
+        #         helplink=helplink, content=[tc],
+        #         extra_class="trophy-area")
 
-        rb.push(scb)
+        # rb.push(scb)
 
         multis = LabeledMulti.by_owner(self.user, load_subreddits=False)
 
@@ -2394,9 +2554,8 @@ class ProfilePage(Reddit):
         if c.user_is_admin:
             from r2.lib.pages.admin_pages import AdminNotesSidebar
             from admin_pages import AdminSidebar
-
             rb.push(AdminSidebar(self.user))
-            rb.push(AdminNotesSidebar('user', self.user.name))
+            rb.push(AdminNotesSidebar('user', self.user.name, self.user))
         elif c.user_is_sponsor:
             from admin_pages import SponsorSidebar
             rb.push(SponsorSidebar(self.user))
@@ -2411,9 +2570,9 @@ class ProfilePage(Reddit):
 
         if (c.user == self.user or c.user.employee or
             self.user.pref_public_server_seconds):
-            seconds_bar = ServerSecondsBar(self.user)
+            """seconds_bar = ServerSecondsBar(self.user)
             if seconds_bar.message or seconds_bar.gift_message:
-                rb.push(seconds_bar)
+                rb.push(seconds_bar)"""
 
         rb.push(ProfileBar(self.user))
 
@@ -2502,15 +2661,15 @@ class ProfileBar(Templated):
 
             if not self.viewing_self:
                 self.goldlink = "/gold?goldtype=gift&recipient=" + user.name
-                self.giftmsg = _("give reddit gold to %(user)s to show "
+                self.giftmsg = _("give gold to %(user)s to show "
                                  "your appreciation") % {'user': user.name}
             elif not user.gold:
                 self.goldlink = "/gold/about"
-                self.giftmsg = _("get extra features and help support reddit "
-                                 "with a reddit gold subscription")
+                self.giftmsg = _("get extra features and help support"
+                                 " with a gold subscription")
             elif gold_days_left < 7 and not user.gold_will_autorenew:
                 self.goldlink = "/gold/about"
-                self.giftmsg = _("renew your reddit gold")
+                self.giftmsg = _("renew your gold")
 
             if not self.viewing_self:
                 self.is_friend = user._id in c.user.friends
@@ -2520,14 +2679,14 @@ class ProfileBar(Templated):
 
 
 class ServerSecondsBar(Templated):
-    my_message = _("you have helped pay for *%(time)s* of reddit server time.")
-    their_message = _("/u/%(user)s has helped pay for *%%(time)s* of reddit server "
+    my_message = _("you have helped pay for *%(time)s* of saidit server time.")
+    their_message = _("/u/%(user)s has helped pay for *%%(time)s* of saidit server "
                       "time.")
 
     my_gift_message = _("gifts on your behalf have helped pay for *%(time)s* of "
-                        "reddit server time.")
+                        "saidit server time.")
     their_gift_message = _("gifts on behalf of /u/%(user)s have helped pay for "
-                           "*%%(time)s* of reddit server time.")
+                           "*%%(time)s* of saidit server time.")
 
     def make_message(self, seconds, my_message, their_message):
         if not seconds:
@@ -2606,7 +2765,7 @@ class WelcomeBar(InfoBar):
         if messages:
             message = random.choice(messages).split(" / ")
         else:
-            message = (_("reddit is a platform for internet communities"),
+            message = (_("saidit is a platform for internet communities"),
                        _("where your votes shape what the world is talking about."))
         InfoBar.__init__(self, message=message)
 
@@ -2809,6 +2968,8 @@ class SubredditTopBar(CachedTemplate):
         # it is added to the render cache key.
         self.location = c.location or "no_location"
         self.my_subreddits_dropdown = self.my_reddits_dropdown()
+        # SaidIt: configrable home page
+        self.pref_site_index = c.user.pref_site_index
         CachedTemplate.__init__(self, name=name, t=t, over18=c.over18)
 
     @property
@@ -2833,9 +2994,9 @@ class SubredditTopBar(CachedTemplate):
         drop_down_buttons.append(NavButton(menu.edit_subscriptions,
                                            sr_path = False,
                                            css_class = 'bottom-option',
-                                           dest = '/subreddits/'))
+                                           dest = '/subs/mine/'))
         return SubredditMenu(drop_down_buttons,
-                             title = _('my subreddits'),
+                             title = _('my subs'),
                              type = 'srdrop')
 
     def subscribed_reddits(self):
@@ -2860,7 +3021,42 @@ class SubredditTopBar(CachedTemplate):
     def special_reddits(self):
         css_classes = {Random: "random",
                        RandomSubscription: "gold"}
-        reddits = [Frontpage, All, Random]
+
+        # SaidIt: configurable home page
+        reddits = []
+        if g.site_index_user_configurable == 'true':
+            if c.user.pref_site_index == 'site_index_front':
+                if g.menu_show_front == 'true':
+                    reddits.append(Frontpage)
+                if g.menu_show_all == 'true':
+                    reddits.append(All)
+                if g.menu_show_home == 'true':
+                    reddits.append(Home)
+            elif c.user.pref_site_index == 'site_index_all':
+                if g.menu_show_all == 'true':
+                    reddits.append(All)
+                if g.menu_show_front == 'true':
+                    reddits.append(Frontpage)
+                if g.menu_show_home == 'true':
+                    reddits.append(Home)
+            elif c.user.pref_site_index == 'site_index_home':
+                if g.menu_show_home == 'true':
+                    reddits.append(Home)
+                if g.menu_show_front == 'true':
+                    reddits.append(Frontpage)
+                if g.menu_show_all == 'true':
+                    reddits.append(All)
+        else:
+            if g.menu_show_home == 'true':
+                reddits.append(Home)
+            if g.menu_show_front == 'true':
+                reddits.append(Frontpage)
+            if g.menu_show_all == 'true':
+                reddits.append(All)
+
+        if g.menu_show_random == 'true':
+            reddits.append(Random)
+
         if getattr(c.site, "over_18", False):
             reddits.append(RandomNSFW)
         if c.user_is_loggedin:
@@ -2879,18 +3075,18 @@ class SubredditTopBar(CachedTemplate):
         sep = '<span class="separator">&nbsp;|&nbsp;</span>'
         menus = []
         menus.append(self.special_reddits())
-        menus.append(RawString(sep))
+#        menus.append(RawString(sep))
 
-        if not c.user_is_loggedin:
-            menus.append(self.popular_reddits())
-        else:
-            menus.append(self.subscribed_reddits())
+#        if not c.user_is_loggedin:
+#            menus.append(self.popular_reddits())
+#        else:
+#            menus.append(self.subscribed_reddits())
 
             # if the user has more than ~10 subscriptions the top bar will be
             # completely full and anything we add to it won't be seen
-            if len(self.my_reddits) < 10:
-                menus.append(RawString(sep))
-                menus.append(self.popular_reddits(exclude_mine=True))
+#            if len(self.my_reddits) < 10:
+#                menus.append(RawString(sep))
+#                menus.append(self.popular_reddits(exclude_mine=True))
 
         return menus
 
@@ -2918,13 +3114,13 @@ class MultiInfoBar(Templated):
 
         explore_sr = g.live_config["listing_chooser_explore_sr"]
         if explore_sr:
-            self.share_url = "/r/%(sr)s/submit?url=%(url)s" % {
+            self.share_url = "/%(brander_community_abbr)s/%(sr)s/submit?url=%(url)s" % {
                 "sr": explore_sr,
                 "url": g.origin + self.multi.path,
+                "brander_community_abbr": g.brander_community_abbr,
             }
         else:
             self.share_url = None
-
 
 class SubscriptionBox(Templated):
     """The list of reddits a user is currently subscribed to to go in
@@ -2939,19 +3135,20 @@ class SubscriptionBox(Templated):
 
         # Construct MultiReddit path
         if multi_text:
-            self.multi_path = '/r/' + '+'.join([sr.name for sr in srs])
+            self.multi_path = '/' + g.brander_community_abbr + '/' + '+'.join([sr.name for sr in srs])
 
-        if len(srs) > Subreddit.sr_limit and c.user_is_loggedin:
+        # CUSTOM: configurable limits
+        if len(srs) > g.sr_limit and c.user_is_loggedin:
             if not c.user.gold:
                 self.goldlink = "/gold"
-                self.goldmsg = _("raise it to %s") % Subreddit.gold_limit
+                self.goldmsg = _("raise it to %s") % g.gold_limit
                 self.prelink = ["/wiki/faq#wiki_how_many_subreddits_can_i_subscribe_to.3F",
-                                _("%s visible") % Subreddit.sr_limit]
+                                _("%s visible") % g.sr_limit]
             else:
                 self.goldlink = "/gold/about"
-                extra = min(len(srs) - Subreddit.sr_limit,
-                            Subreddit.gold_limit - Subreddit.sr_limit)
-                visible = min(len(srs), Subreddit.gold_limit)
+                extra = min(len(srs) - g.sr_limit,
+                            g.gold_limit - g.sr_limit)
+                visible = min(len(srs), g.gold_limit)
                 bonus = {"bonus": extra}
                 self.goldmsg = _("%(bonus)s bonus subreddits") % bonus
                 self.prelink = ["/wiki/faq#wiki_how_many_subreddits_can_i_subscribe_to.3F",
@@ -2959,7 +3156,6 @@ class SubscriptionBox(Templated):
 
         Templated.__init__(self, srs=srs, goldlink=self.goldlink,
                            goldmsg=self.goldmsg)
-
     @property
     def reddits(self):
         return wrap_links(self.srs)
@@ -2982,17 +3178,18 @@ class AllInfoBar(Templated):
         self.sr = site
         self.allminus_url = None
         self.css_class = None
-        if isinstance(site, AllMinus) and c.user.gold:
+        # CUSTOM: degolding
+        if isinstance(site, AllMinus):
             self.description = (strings.r_all_minus_description + "\n\n" +
-                " ".join("/r/" + sr.name for sr in site.exclude_srs))
-            self.css_class = "gold-accent"
+                " ".join("/" + g.brander_community_abbr + "/" + sr.name for sr in site.exclude_srs))
+            # self.css_class = "gold-accent"
         else:
             self.description = strings.r_all_description
             sr_ids = Subreddit.user_subreddits(user)
             srs = Subreddit._byID(
                 sr_ids, data=True, return_dict=False, stale=True)
             if srs:
-                self.allminus_url = '/r/all-' + '-'.join([sr.name for sr in srs])
+                self.allminus_url = '/' + g.brander_community_abbr + '/all-' + '-'.join([sr.name for sr in srs])
 
         self.gilding_listing = False
         if request.path.startswith("/comments/gilded"):
@@ -3381,7 +3578,7 @@ class ReportForm(CachedTemplate):
                 self.rules.append(rule["short_name"])
             if self.rules:
                 self.system_rules = SITEWIDE_RULES
-                self.rules_page_link = "/r/%s/about/rules" % subreddit.name
+                self.rules_page_link = "/%s/%s/about/rules" % (g.brander_community_abbr, subreddit.name)
         if not self.rules:
             self.rules = OLD_SITEWIDE_RULES
             self.rules_page_link = "/help/contentpolicy"
@@ -3397,7 +3594,7 @@ class SubredditReportForm(CachedTemplate):
         self.kind = None
         subreddit = None
 
-        if isinstance(thing, Comment, Link):
+        if isinstance(thing, (Comment, Link)):
             subreddit = thing.subreddit_slow
             self.sr_name = subreddit.name
             if filter_by_kind:
@@ -4558,10 +4755,11 @@ class PromoteLinkEdit(PromoteLinkBase):
         self.inventory = {}
         message = _("Create your ad on this page. Have questions? "
                     "Check out the [Help Center](%(help_center)s) "
-                    "or [/r/selfserve](%(selfserve)s).")
+                    "or [/%(brander_community_abbr)s/selfserve](%(selfserve)s).")
         message %= {
             'help_center': 'https://reddit.zendesk.com/hc/en-us/categories/200352595-Advertising',
-            'selfserve': 'https://www.reddit.com/r/selfserve'
+            'selfserve': 'https://www.reddit.com/r/selfserve',
+            'brander_community_abbr': g.brander_community_abbr,
         }
         self.infobar = RedditInfoBar(message=message)
         self.price_dict = PromotionPrices.get_price_dict(self.author)
@@ -4793,14 +4991,19 @@ def make_link_child(item, show_media_preview=False):
                 if media_embed.sandbox:
                     should_authenticate = (item.subreddit.type in Subreddit.private_types or
                         item.subreddit.quarantine)
-                    media_embed = MediaEmbed(
-                        media_domain=g.media_domain,
-                        height=media_embed.height + 10,
-                        width=media_embed.width + 10,
-                        scrolling=media_embed.scrolling,
-                        id36=item._id36,
-                        authenticated=should_authenticate,
-                    )
+                    if media_embed.direct_embed:
+                        media_embed = MediaEmbedDirect(
+                            content=media_embed.content,
+                        )
+                    else:
+                        media_embed = MediaEmbed(
+                            media_domain=g.media_domain,
+                            height=media_embed.height + 10,
+                            width=media_embed.width + 10,
+                            scrolling=media_embed.scrolling,
+                            id36=item._id36,
+                            authenticated=should_authenticate,
+                        )
                 else:
                     media_embed = media_embed.content
             else:
@@ -4879,6 +5082,10 @@ class MediaEmbed(Templated):
             self.credentials = ""
         Templated.__init__(self, *args, **kwargs)
 
+class MediaEmbedDirect(Templated):
+    """Non-iframe embeds, for dynamic sized imgur embeds, etc. """
+    def __init__(self, *args, **kwargs):
+        Templated.__init__(self, *args, **kwargs)
 
 class MediaPreview(Templated):
     """Rendered html container for a media child"""
@@ -4895,10 +5102,48 @@ class SelfTextChild(LinkChild):
     css_style = "selftext"
 
     def content(self):
+
+        # CUSTOM - Post Chats
+        is_chat_post = False
+        user_chat_enabled = c.user.pref_chat_enabled
+        chat_user_is_guest = True
+        chat_user = ''
+        chat_client_user = ''
+        chat_client_password = ''
+        chat_client = ''
+        chat_client_url = ''
+        chat_channel = ''
+        if feature.is_enabled('chat') and self.link.subreddit.chat_enabled and self.link.selftext == g.live_config['chat_enabling_post_content'] and not self.link.expunged:
+                is_chat_post = True
+                irc_sanitized_post_title = re.sub('\-+', '-', re.sub(r'[^a-zA-Z0-9]','-', self.link.title))[:15].strip(' -')
+                chat_channel = g.live_config['chat_channel_name_prefix'] + self.link.subreddit.name + g.live_config['chat_channel_topic_separator'] + irc_sanitized_post_title + g.live_config['chat_channel_name_suffix']
+                chat_channel = quote(chat_channel)
+
+                # NOTE - Don't have to check c.user_is_loggedin before accessing c.user.pref_*, there are defaults
+                if c.user.pref_chat_enabled:
+                    chat_user = c.user.pref_chat_user
+                    chat_client_user = c.user.pref_chat_client_user
+                    chat_client_password = c.user.pref_chat_client_password
+                    chat_client = g.live_config['chat_client']
+                    chat_client_url = g.chat_client_url
+                    if c.user_is_loggedin:
+                        chat_user_is_guest = False
+
         u = UserText(self.link, self.link.selftext,
                      editable = c.user == self.link.author,
                      nofollow = self.nofollow,
-                     expunged=self.link.expunged)
+                     expunged=self.link.expunged,
+
+                     # CUSTOM
+                     is_chat_post = is_chat_post,
+                     user_chat_enabled = user_chat_enabled,
+                     chat_user = chat_user,
+                     chat_user_is_guest = chat_user_is_guest,
+                     chat_client_user = chat_client_user,
+                     chat_client_password = chat_client_password,
+                     chat_client = chat_client,
+                     chat_client_url = chat_client_url,
+                     chat_channel = chat_channel)
         return u.render()
 
 class UserText(CachedTemplate):
@@ -4924,6 +5169,17 @@ class UserText(CachedTemplate):
                  admin_takedown=False,
                  data_attrs={},
                  source=None,
+
+                 # CUSTOM
+                 is_chat_post = False,
+                 chat_client = '',
+                 chat_client_url = '',
+                 chat_user = '',
+                 chat_client_user = '',
+                 chat_client_password = '',
+                 chat_channel = '',
+                 chat_user_is_guest = True,
+                 user_chat_enabled = True,
                 ):
 
         css_class = "usertext"
@@ -4945,6 +5201,10 @@ class UserText(CachedTemplate):
             if not getattr(item, 'deleted', False) or c.user_is_admin:
                 fullname = item._fullname
 
+        # CUSTOM
+        if is_chat_post:
+            css_class += " chat"
+
         CachedTemplate.__init__(self,
                                 fullname = fullname,
                                 text = text,
@@ -4965,7 +5225,19 @@ class UserText(CachedTemplate):
                                 admin_takedown=admin_takedown,
                                 data_attrs=data_attrs,
                                 source=source,
+
+                                # CUSTOM
+                                is_chat_post=is_chat_post,
+                                chat_client=chat_client,
+                                chat_client_url=chat_client_url,
+                                chat_channel=chat_channel,
+                                chat_user_is_guest = chat_user_is_guest,
+                                chat_user = chat_user,
+                                chat_client_user = chat_client_user,
+                                chat_client_password = chat_client_password,
+                                user_chat_enabled = user_chat_enabled,
                                )
+
 
 class MediaEmbedBody(CachedTemplate):
     """What's rendered inside the iframe that contains media objects"""
@@ -5689,7 +5961,7 @@ class SubredditSelector(Templated):
 
         if include_user_subscriptions:
             self.subreddits.append((
-                _('your subscribed subreddits'),
+                _('your subscribed subs'),
                 Subreddit.user_subreddits(c.user, ids=False)
             ))
 
@@ -5816,3 +6088,35 @@ class GeotargetNotice(Templated):
 
 class ShareClose(Templated):
     pass
+
+# CUSTOM
+class AdminGlobalUserBans(Templated):
+    def __init__(self):
+        from r2.models import GlobalBan
+        Templated.__init__(self)
+        self.bans = GlobalBan._all_global_bans()
+
+        # load accounts by ban's user_id, not using proper reddit relationships here
+        self.accounts = {}
+        for ban in self.bans:
+            try:
+                account = Account._byID(ban.user_id)
+                if account:
+                    self.accounts[ban.user_id] = account
+            except NotFound:
+                pass
+
+class AdminIpBans(Templated):
+    def __init__(self):
+        from r2.models import IpBan
+        Templated.__init__(self)
+        self.bans = IpBan._all_bans()
+
+class AdminIpHistory(Templated):
+    def __init__(self, user):
+        from r2.models import IpHistory
+        Templated.__init__(self)
+        self.user = user
+        self.iphistory = []
+        if user:
+            self.iphistory = IpHistory._ips_by_user(user);

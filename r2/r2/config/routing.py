@@ -57,6 +57,7 @@ def make_map(config):
         plugin.add_routes(mc)
 
     mc('/admin/', controller='awards')
+    mc('/api/admin/add_ban_message', controller='admintool', action='add_ban_message')
 
     mc('/robots.txt', controller='robots', action='robots')
     mc('/crossdomain', controller='robots', action='crossdomain')
@@ -70,16 +71,17 @@ def make_map(config):
     mc('/submit', controller='front', action='submit')
 
     # redirect old urls to the new
-    ABOUT_BASE = "https://about.reddit.com/"
+    # ABOUT_BASE = "https://about.%s/" % config['pylons.app_globals'].domain
+    ABOUT_BASE = "https://saidit.net/"
     mc('/about', controller='redirect', action='redirect', dest=ABOUT_BASE, 
        conditions={'function':not_in_sr})
     mc('/about/values', controller='redirect', action='redirect', dest=ABOUT_BASE)
     mc('/about/team', controller='redirect', action='redirect',
        dest=ABOUT_BASE)
     mc('/about/alien', controller='redirect', action='redirect',
-       dest=ABOUT_BASE + "press")
+       dest=ABOUT_BASE)
     mc('/jobs', controller='redirect', action='redirect',
-       dest=ABOUT_BASE + "careers")
+       dest=ABOUT_BASE)
 
     mc('/over18', controller='post', action='over18')
     mc('/quarantine', controller='post', action='quarantine')
@@ -94,30 +96,37 @@ def make_map(config):
        action='subreddit_traffic_report')
     mc('/account-activity', controller='front', action='account_activity')
 
-    mc('/subreddits/create', controller='front', action='newreddit')
-    mc('/subreddits/search', controller='front', action='search_reddits')
-    mc('/subreddits/login', controller='forms', action='login')
-    mc('/subreddits/:where', controller='reddits', action='listing',
-       where='popular', conditions={'function':not_in_sr},
-       requirements=dict(where="popular|new|banned|employee|gold|default|"
-                               "quarantine|featured"))
-    # If no subreddit is specified, might as well show a list of 'em.
-    mc('/r', controller='redirect', action='redirect', dest='/subreddits')
+    mc('/subs/create', controller='front', action='newreddit')
+    mc('/subs/search', controller='front', action='search_reddits')
+    mc('/subs/login', controller='forms', action='login')
 
-    mc('/subreddits/mine/:where', controller='myreddits', action='listing',
+    if config['pylons.app_globals'].gold_gilding_enabled == 'true':
+      mc('/subs/:where', controller='reddits', action='listing',
+        where='popular', conditions={'function':not_in_sr},
+        requirements=dict(where="popular|new|banned|employee|gold|default|"
+                                "quarantine|featured"))
+    else:
+      mc('/subs/:where', controller='reddits', action='listing',
+        where='popular', conditions={'function':not_in_sr},
+        requirements=dict(where="popular|new|banned|employee|default|"
+                                "quarantine|featured"))
+
+    # If no subreddit is specified, might as well show a list of 'em.
+    mc('/' + config['pylons.app_globals'].brander_community_abbr, controller='redirect', action='redirect', dest='/subs')
+    mc('/subs/mine/:where', controller='myreddits', action='listing',
        where='subscriber', conditions={'function':not_in_sr},
        requirements=dict(where='subscriber|contributor|moderator'))
 
     # These routes are kept for backwards-compatibility reasons
     # Using the above /subreddits/ ones instead is preferable
-    mc('/reddits/create', controller='front', action='newreddit')
-    mc('/reddits/search', controller='front', action='search_reddits')
-    mc('/reddits/login', controller='forms', action='login')
-    mc('/reddits/:where', controller='reddits', action='listing',
+    mc('/subreddits/create', controller='front', action='newreddit')
+    mc('/subreddits/search', controller='front', action='search_reddits')
+    mc('/subreddits/login', controller='forms', action='login')
+    mc('/subreddits/:where', controller='reddits', action='listing',
        where='popular', conditions={'function':not_in_sr},
        requirements=dict(where="popular|new|banned"))
 
-    mc('/reddits/mine/:where', controller='myreddits', action='listing',
+    mc('/subreddits/mine/:where', controller='myreddits', action='listing',
        where='subscriber', conditions={'function':not_in_sr},
        requirements=dict(where='subscriber|contributor|moderator'))
 
@@ -136,7 +145,7 @@ def make_map(config):
     mc('/awards/received', controller='front', action='received_award')
 
     mc('/i18n', controller='redirect', action='redirect',
-       dest='https://www.reddit.com/r/i18n')
+       dest=config['pylons.app_globals'].https_endpoint + '/' + config['pylons.app_globals'].brander_community_abbr + '/i18n')
     mc('/feedback', controller='redirect', action='redirect',
        dest='/contact')
     mc('/contact', controller='frontunstyled', action='contact_us')
@@ -145,8 +154,14 @@ def make_map(config):
     mc('/admin/awards/:awardcn/:action', controller='awards',
        requirements=dict(action="give|winners"))
 
-    mc('/admin/creddits', controller='admintool', action='creddits')
-    mc('/admin/gold', controller='admintool', action='gold')
+    if config['pylons.app_globals'].gold_gilding_enabled == 'true':
+      mc('/admin/creddits', controller='admintool', action='creddits')
+      mc('/admin/gold', controller='admintool', action='gold')
+
+    # CUSTOM
+    mc('/admin/globaluserbans', controller='globaluserbans')
+    mc('/admin/iphistory', controller='iphistory')
+    mc('/admin/ipbans', controller='ipbans')
 
     mc('/user/:username/about', controller='user', action='about',
        where='overview')
@@ -166,9 +181,10 @@ def make_map(config):
        connect('/', controller='hot', action='listing')
        connect('/submit', controller='front', action='submit')
        connect('/:sort', controller='browse', sort='top',
-          action='listing', requirements=dict(sort='top|controversial'))
+          action='listing', requirements=dict(sort='top|' + config['pylons.app_globals'].voting_upvote_path + '|' + config['pylons.app_globals'].voting_controversial_path))
        connect('/:controller', action='listing',
-          requirements=dict(controller="hot|new|rising|randomrising|ads"))
+          requirements=dict(controller="hot|new|rising|randomrising|ads|newcomments"))
+
 
     mc('/user/:username/:where/:show', controller='user', action='listing')
     
@@ -191,6 +207,7 @@ def make_map(config):
        connect('/about/message/:where', controller='message',
           action='listing')
        connect('/about/log', controller='front', action='moderationlog')
+       connect('/modlog', controller='front', action='moderationlog')
        connect('/about/:location', controller='front',
           action='spamlisting',
           requirements=dict(location='reports|spam|modqueue|unmoderated|edited'))
@@ -204,9 +221,10 @@ def make_map(config):
        connect('/gilded', action='listing', controller='gilded')
        connect('/search', controller='front', action='search')
 
+
     mc('/u/:username', controller='redirect', action='user_redirect')
     mc('/u/:username/*rest', controller='redirect', action='user_redirect')
-
+    
     # preserve timereddit URLs from 4/1/2012
     mc('/t/:timereddit', controller='redirect', action='timereddit_redirect')
     mc('/t/:timereddit/*rest', controller='redirect',
@@ -283,13 +301,13 @@ def make_map(config):
     mc('/', controller='hot', action='listing')
 
     mc('/:controller', action='listing',
-       requirements=dict(controller="hot|new|rising|randomrising|ads"))
+       requirements=dict(controller="hot|new|rising|randomrising|ads|newcomments"))
     mc('/saved', controller='user', action='saved_redirect')
 
     mc('/by_id/:names', controller='byId', action='listing')
 
     mc('/:sort', controller='browse', sort='top', action='listing',
-       requirements=dict(sort='top|controversial'))
+       requirements=dict(sort='top|' + config['pylons.app_globals'].voting_upvote_path + '|' + config['pylons.app_globals'].voting_controversial_path))
 
     mc('/message/compose', controller='message', action='compose')
     mc('/message/messages/:mid', controller='message', action='listing',
@@ -301,21 +319,24 @@ def make_map(config):
     mc('/thanks', controller='forms', action="claim", secret='')
     mc('/thanks/:secret', controller='forms', action="claim")
 
-    mc('/gold', controller='forms', action="gold", is_payment=False)
-    mc('/gold/payment', controller='forms', action="gold", is_payment=True)
-    mc('/gold/creditgild/:passthrough', controller='forms', action='creditgild')
-    mc('/gold/thanks', controller='front', action='goldthanks')
-    mc('/gold/subscription', controller='forms', action='subscription')
-    mc('/gilding', controller='front', action='gilding')
-    mc('/creddits', controller='redirect', action='redirect', 
-       dest='/gold?goldtype=creddits')
+    if config['pylons.app_globals'].gold_gilding_enabled == 'true':
+      mc('/gold', controller='forms', action="gold", is_payment=False)
+      mc('/gold/payment', controller='forms', action="gold", is_payment=True)
+      mc('/gold/creditgild/:passthrough', controller='forms', action='creditgild')
+      mc('/gold/thanks', controller='front', action='goldthanks')
+      mc('/gold/subscription', controller='forms', action='subscription')
+      mc('/gilding', controller='front', action='gilding')
+      mc('/creddits', controller='redirect', action='redirect',
+         dest='/gold?goldtype=creddits')
 
     mc('/password', controller='forms', action="password")
     mc('/random', controller='front', action="random")
     mc('/:action', controller='embed',
        requirements=dict(action="blog"))
-    mc('/help/gold', controller='redirect', action='redirect',
-       dest='/gold/about')
+
+    if config['pylons.app_globals'].gold_gilding_enabled == 'true':
+      mc('/help/gold', controller='redirect', action='redirect',
+        dest='/gold/about')
 
     mc('/help/:page', controller='policies', action='policy_page',
        conditions={'function':not_in_sr},
@@ -353,7 +374,7 @@ def make_map(config):
 
     mc('/c/:comment_id', controller='front', action='comment_by_id')
 
-    mc('/s/*urloid', controller='toolbar', action='s')
+    mc('/submit/*urloid', controller='toolbar', action='s')
     # additional toolbar-related rules just above the catchall
 
     mc('/resetpassword/:key', controller='forms',
@@ -373,20 +394,23 @@ def make_map(config):
 
     mc('/api', controller='redirect', action='redirect', dest='/dev/api')
     mc('/api/distinguish/:how', controller='api', action="distinguish")
-    mc('/api/spendcreddits', controller='ipn', action="spendcreddits")
-    mc('/api/stripecharge/gold', controller='stripe', action='goldcharge')
-    mc('/api/modify_subscription', controller='stripe',
-       action='modify_subscription')
-    mc('/api/cancel_subscription', controller='stripe',
-       action='cancel_subscription')
-    mc('/api/stripewebhook/gold/:secret', controller='stripe',
-       action='goldwebhook')
-    mc('/api/coinbasewebhook/gold/:secret', controller='coinbase',
-       action='goldwebhook')
-    mc('/api/rgwebhook/gold/:secret', controller='redditgifts',
-       action='goldwebhook')
-    mc('/api/ipn/:secret', controller='ipn', action='ipn')
-    mc('/ipn/:secret', controller='ipn', action='ipn')
+
+    if config['pylons.app_globals'].gold_gilding_enabled == 'true':
+      mc('/api/spendcreddits', controller='ipn', action="spendcreddits")
+      mc('/api/stripecharge/gold', controller='stripe', action='goldcharge')
+      mc('/api/modify_subscription', controller='stripe',
+         action='modify_subscription')
+      mc('/api/cancel_subscription', controller='stripe',
+         action='cancel_subscription')
+      mc('/api/stripewebhook/gold/:secret', controller='stripe',
+         action='goldwebhook')
+      mc('/api/coinbasewebhook/gold/:secret', controller='coinbase',
+         action='goldwebhook')
+      mc('/api/rgwebhook/gold/:secret', controller='redditgifts',
+         action='goldwebhook')
+      mc('/api/ipn/:secret', controller='ipn', action='ipn')
+      mc('/ipn/:secret', controller='ipn', action='ipn')
+
     mc('/api/:action/:url_user', controller='api',
        requirements=dict(action="login|register"))
     mc('/api/gadget/click/:ids', controller='api', action='gadget',
@@ -423,10 +447,10 @@ def make_map(config):
     mc("/api/multi/user/:username", controller="multiapi", action="list_multis")
     mc("/api/multi/copy", controller="multiapi", action="multi_copy")
     mc("/api/multi/rename", controller="multiapi", action="multi_rename")
-    mc("/api/multi/*multipath/r/:srname", controller="multiapi", action="multi_subreddit")
+    mc("/api/multi/*multipath/" + config['pylons.app_globals'].brander_community_abbr + "/:srname", controller="multiapi", action="multi_subreddit")
     mc("/api/multi/*multipath/description", controller="multiapi", action="multi_description")
     mc("/api/multi/*multipath", controller="multiapi", action="multi")
-    mc("/api/filter/*multipath/r/:srname", controller="multiapi", action="multi_subreddit")
+    mc("/api/filter/*multipath/" + config['pylons.app_globals'].brander_community_abbr + "/:srname", controller="multiapi", action="multi_subreddit")
     mc("/api/filter/*multipath", controller="multiapi", action="multi")
 
     mc("/api/v1/:action", controller="oauth2frontend",
@@ -446,8 +470,9 @@ def make_map(config):
     mc("/api/v1/me/:action", controller="apiv1user")
     mc("/api/v1/me/:action/:username", controller="apiv1user")
 
-    mc("/api/v1/gold/gild/:fullname", controller="apiv1gold", action="gild")
-    mc("/api/v1/gold/give/:username", controller="apiv1gold", action="give")
+    if config['pylons.app_globals'].gold_gilding_enabled == 'true':
+      mc("/api/v1/gold/gild/:fullname", controller="apiv1gold", action="gild")
+      mc("/api/v1/gold/give/:username", controller="apiv1gold", action="give")
 
     mc('/dev', controller='redirect', action='redirect', dest='/dev/api')
     mc('/dev/api', controller='apidocs', action='docs')
@@ -478,6 +503,9 @@ def make_map(config):
        requirements=dict(level="error"))
 
     mc("/web/poisoning", controller="weblog", action="report_cache_poisoning")
+
+    mc('/' + config['pylons.app_globals'].brander_community_abbr_redir + '/:srname', controller='redirect', action='brander_redirect')
+    mc('/' + config['pylons.app_globals'].brander_community_abbr_redir + '/:srname/*rest', controller='redirect', action='brander_redirect')
 
     # This route handles displaying the error page and
     # graphics used in the 404/500

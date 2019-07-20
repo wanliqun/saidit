@@ -274,12 +274,12 @@ def get_title(url):
 
         with codec(opener, "ignore") as reader:
             # Attempt to find the title in the first 1kb
-            data = reader.read(1024)
+            data = reader.read(10024)
             title = extract_title(data)
 
             # Title not found in the first kb, try searching an additional 10kb
             if not title:
-                data += reader.read(10240)
+                data += reader.read(10000240)
                 title = extract_title(data)
 
         return title
@@ -586,7 +586,7 @@ class UrlParser(object):
     def has_static_image_extension(self):
         """Guess if the url leads to a non-animated image."""
         extension = self.path_extension().lower()
-        return extension in {'jpeg', 'jpg', 'png', 'tiff'}
+        return extension in {'gif', 'jpeg', 'jpg', 'png', 'tiff'}
 
     def set_extension(self, extension):
         """
@@ -674,7 +674,7 @@ class UrlParser(object):
         utility method for checking if the path starts with a
         subreddit specifier (namely /r/ or /subreddits/).
         """
-        return self.path.startswith(('/r/', '/subreddits/', '/reddits/'))
+        return self.path.startswith(('/' + g.brander_community_abbr + '/', '/subreddits/', '/reddits/'))
 
     def get_subreddit(self):
         """checks if the current url refers to a subreddit and returns
@@ -692,7 +692,7 @@ class UrlParser(object):
             if (not self.hostname or
                     is_subdomain(self.hostname, g.domain) or
                     self.hostname.startswith(g.domain)):
-                if self.path.startswith('/r/'):
+                if self.path.startswith('/' + g.brander_community_abbr + '/'):
                     return Subreddit._by_name(self.path.split('/')[2])
                 else:
                     return DefaultSR()
@@ -788,9 +788,16 @@ class UrlParser(object):
         Adds the subreddit's path to the path if another subreddit's
         prefix is not already present.
         """
+        from r2.models import DynamicSR
         if not (self.path_has_subreddit()
                 or self.path.startswith(subreddit.user_path)):
-            self.path = (subreddit.user_path + self.path)
+            # SaidIt: configurable home page: don't prepend subreddit.user_path, 
+            # vanilla reddit would have subreddit.user_path='/' here. Fixes issues
+            # with routes /user, /prefs, /subs.
+            if (isinstance(subreddit, DynamicSR)):
+                pass
+            else:
+                self.path = (subreddit.user_path + self.path)
         return self
 
     @property

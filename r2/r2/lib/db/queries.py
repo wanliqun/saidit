@@ -76,16 +76,18 @@ from r2.models.query_cache import (
     UserQueryCache,
 )
 from r2.models.vote import Vote
+from r2.models.comment_tree import CommentTree
 
 
 precompute_limit = 1000
 
 db_sorts = dict(hot = (desc, '_hot'),
                 new = (desc, '_date'),
-                top = (desc, '_score'),
-                controversial = (desc, '_controversy'))
+                top = (desc, '_score'))
 
 def db_sort(sort):
+    db_sorts[g.voting_upvote_path] = (desc, '_upvotes')
+    db_sorts[g.voting_controversial_path] = (desc, '_controversy')
     cls, col = db_sorts[sort]
     return cls(col)
 
@@ -100,7 +102,7 @@ db_times = dict(all = None,
 # etc). All of these but 'all' are done in mr_top, who knows about the
 # structure of the stored CachedResults (so changes here may warrant
 # changes there)
-time_filtered_sorts = set(('top', 'controversial'))
+time_filtered_sorts = set(('top', g.voting_upvote_path, g.voting_controversial_path))
 
 #we need to define the filter functions here so cachedresults can be pickled
 def filter_identity(x):
@@ -194,6 +196,7 @@ class CachedResults(object):
         if self.query._sort in ([desc('_date')],
                                 [desc('_hot'), desc('_date')],
                                 [desc('_score'), desc('_date')],
+                                [desc('_upvotes'), desc('_date')],
                                 [desc('_controversy'), desc('_date')]):
             if not any(r for r in self.query._rules
                        if r.lval.name == '_date'):
@@ -402,12 +405,25 @@ def get_spam_links(sr_id):
                        Link.c._spam == True,
                        sort = db_sort('new'))
 
+# CUSTOM
+def get_spam_links_results(sr_id):
+    q = Link._query(Link.c.sr_id == sr_id,
+                       Link.c._spam == True,
+                       sort = db_sort('new'))
+    return make_results(q)
+
 @cached_query(SubredditQueryCache)
 def get_spam_comments(sr_id):
     return Comment._query(Comment.c.sr_id == sr_id,
                           Comment.c._spam == True,
                           sort = db_sort('new'))
 
+# CUSTOM
+def get_spam_comments_results(sr_id):
+    q = Comment._query(Comment.c.sr_id == sr_id,
+                          Comment.c._spam == True,
+                          sort = db_sort('new'))
+    return make_results(q)
 
 @cached_query(SubredditQueryCache)
 def get_edited_comments(sr_id):
@@ -482,6 +498,15 @@ def get_reported_links(sr_id):
         q._filter(Link.c.sr_id == sr_id)
     return q
 
+# CUSTOM
+def get_reported_links_results(sr_id):
+    q = Link._query(Link.c.reported != 0,
+                    Link.c._spam == False,
+                    sort = db_sort('new'))
+    if sr_id is not None:
+        q._filter(Link.c.sr_id == sr_id)
+    return make_results(q)
+
 @cached_query(SubredditQueryCache)
 def get_reported_comments(sr_id):
     q = Comment._query(Comment.c.reported != 0,
@@ -491,6 +516,16 @@ def get_reported_comments(sr_id):
     if sr_id is not None:
         q._filter(Comment.c.sr_id == sr_id)
     return q
+
+# CUSTOM
+def get_reported_comments_results(sr_id):
+    q = Comment._query(Comment.c.reported != 0,
+                          Comment.c._spam == False,
+                          sort = db_sort('new'))
+
+    if sr_id is not None:
+        q._filter(Comment.c.sr_id == sr_id)
+    return make_results(q)
 
 @merged_cached_query
 def get_reported(sr, user=None, include_links=True, include_comments=True):
@@ -681,6 +716,11 @@ inbox_message_rel = Inbox.rel(Account, Message)
 def get_inbox_messages(user):
     return rel_query(inbox_message_rel, user, 'inbox')
 
+# CUSTOM
+def get_inbox_messages_results(user):
+    q = rel_query(inbox_message_rel, user._id, 'inbox')
+    return make_results(q)
+
 @cached_userrel_query
 def get_unread_messages(user):
     return rel_query(inbox_message_rel, user, 'inbox',
@@ -691,6 +731,11 @@ inbox_comment_rel = Inbox.rel(Account, Comment)
 def get_inbox_comments(user):
     return rel_query(inbox_comment_rel, user, 'inbox')
 
+# CUSTOM
+def get_inbox_messages_results(user):
+    q = rel_query(inbox_comment_rel, user._id, 'inbox')
+    return make_results(q)
+
 @cached_userrel_query
 def get_unread_comments(user):
     return rel_query(inbox_comment_rel, user, 'inbox',
@@ -699,6 +744,11 @@ def get_unread_comments(user):
 @cached_userrel_query
 def get_inbox_selfreply(user):
     return rel_query(inbox_comment_rel, user, 'selfreply')
+
+# CUSTOM
+def get_inbox_selfreply_results(user):
+    q = rel_query(inbox_comment_rel, user._id, 'selfreply')
+    return make_results(q)
 
 @cached_userrel_query
 def get_unread_selfreply(user):
@@ -728,6 +778,13 @@ def get_sent(user_id):
     return Message._query(Message.c.author_id == user_id,
                           Message.c._spam == (True, False),
                           sort = desc('_date'))
+
+# CUSTOM
+def get_sent_results(user_id):
+    q = Message._query(Message.c.author_id == user_id,
+                          Message.c._spam == (True, False),
+                          sort = desc('_date'))
+    return make_results(q)
 
 def get_unread_inbox(user):
     return merge_results(get_unread_comments(user),
@@ -1584,7 +1641,8 @@ def unban(things, insert=True):
             # put it back in the listings
             results = [get_links(sr, 'hot', 'all'),
                        get_links(sr, 'top', 'all'),
-                       get_links(sr, 'controversial', 'all'),
+                       get_links(sr, g.voting_upvote_path, 'all'),
+                       get_links(sr, g.voting_controversial_path, 'all'),
                        ]
             # the time-filtered listings will have to wait for the
             # next mr_top run
@@ -1688,35 +1746,50 @@ def clear_reports(things, rels):
         for q, deletes in query_cache_deletes:
             m.delete(q, deletes)
 
-
+# CUSTOM: use *_results() functions
 def add_all_srs():
     """Recalculates every listing query for every subreddit. Very,
        very slow."""
     q = Subreddit._query(sort = asc('_date'))
     for sr in fetch_things2(q):
+        g.log.warning("permacache updating sr %s" % sr.name)
         for q in all_queries(get_links, sr, ('hot', 'new'), ['all']):
             q.update()
         for q in all_queries(get_links, sr, time_filtered_sorts, db_times.keys()):
             q.update()
-        get_spam_links(sr).update()
-        get_spam_comments(sr).update()
-        get_reported_links(sr).update()
-        get_reported_comments(sr).update()
+        get_spam_links_results(sr).update()
+        get_spam_comments_results(sr).update()
+        get_reported_links_results(sr).update()
+        get_reported_comments_results(sr).update()
 
+# CUSTOM: use *_results functions, more get_submitted() and get_comments()
 def update_user(user):
     if isinstance(user, str):
         user = Account._by_name(user)
     elif isinstance(user, int):
         user = Account._byID(user)
 
-    results = [get_inbox_messages(user),
-               get_inbox_comments(user),
-               get_inbox_selfreply(user),
-               get_sent(user),
-               get_liked(user),
-               get_disliked(user),
+    g.log.warning("permacache updating user %s" % user.name)
+    results = [get_inbox_messages_results(user),
+               get_inbox_messages_results(user),
+               get_inbox_selfreply_results(user),
+               get_sent_results(user),
+               # TODO: permacache update/reindex fails for user's liked and disliked links
+               # need a proper CachedQuery to get a CachedResults for update()
+               # error: 'CachedQuery' object has no attribute 'update' or 'CachedQuery' object has no attribute '_sort'
+               # could try the mr_permacache.py linkvote_listings() approch, needs a voting model update for vote directions
+               # get_liked(user),
+               # get_disliked(user),
+               get_submitted(user, 'hot', 'all'),
                get_submitted(user, 'new', 'all'),
+               get_comments(user, 'hot', 'all'),
                get_comments(user, 'new', 'all')]
+
+    for sort in time_filtered_sorts:
+        for time in db_times.keys():
+            results.append(get_submitted(user, sort, time))
+            results.append(get_comments(user, sort, time))
+
     for q in results:
         q.update()
 
@@ -1724,6 +1797,13 @@ def add_all_users():
     q = Account._query(sort = asc('_date'))
     for user in fetch_things2(q):
         update_user(user)
+
+# Rebuild permacache comment trees for every link
+def add_all_comments():
+    q = Link._query(sort = desc('_date'))
+    for link in fetch_things2(q):
+        g.log.warning("permacache updating comments for link %s" % link._id)
+        CommentTree.rebuild(link)
 
 # amqp queue processing functions
 

@@ -32,6 +32,8 @@ from r2.lib.strings import StringHandler, plurals
 from r2.lib.utils import  class_property, query_string, timeago
 from r2.lib.wrapped import Styled
 
+# CUSTOM: Add HomeSR support
+from r2.models.subreddit import DefaultSR, AllSR, HomeSR, DynamicSR
 
 class MenuHandler(StringHandler):
     """Bastard child of StringHandler and plurals.  Menus are
@@ -54,7 +56,10 @@ menu =   MenuHandler(hot          = _('hot'),
                      top          = _('top'),
                      more         = _('more'),
                      relevance    = _('relevance'),
-                     controversial  = _('controversial'),
+                     # NOTE: manually set key to g.voting_upvote_path
+                     insightful   = _(g.voting_upvote_name),
+                     # NOTE: manually set key to g.voting_controversial_path
+                     fun          = _(g.voting_controversial_name),
                      gilded       = _('gilded'),
                      confidence   = _('best'),
                      random       = _('random'),
@@ -91,7 +96,7 @@ menu =   MenuHandler(hot          = _('hot'),
                      mobile       = _("mobile"),
                      advertising  = _("advertise"),
                      gold         = _('reddit gold'),
-                     reddits      = _('subreddits'),
+                     reddits      = _('subs'),
                      rules        = _('site rules'),
                      jobs         = _('jobs'),
                      transparency = _("transparency"),
@@ -124,7 +129,7 @@ menu =   MenuHandler(hot          = _('hot'),
                      home         = _("home"),
                      about        = _("about"),
                      edit_subscriptions = _("edit subscriptions"),
-                     community_settings = _("subreddit settings"),
+                     community_settings = _("sub settings"),
                      edit_stylesheet    = _("edit stylesheet"),
                      community_rules    = _("rules"),
                      moderators   = _("moderators"),
@@ -150,7 +155,7 @@ menu =   MenuHandler(hot          = _('hot'),
 
                      popular      = _("popular"),
                      create       = _("create"),
-                     mine         = _("my subreddits"),
+                     mine         = _("my subs"),
                      quarantine   = _("quarantine"),
                      featured     = _("featured"),
 
@@ -193,7 +198,29 @@ menu =   MenuHandler(hot          = _('hot'),
                      languages = _('languages'),
                      adverts = _('adverts'),
 
-                     whitelist = _("whitelist")
+                     whitelist = _("whitelist"),
+
+                     # CUSTOM
+                     global_user_bans               = _('global user bans'),
+                     ip_bans                        = _('ip bans'),
+                     ip_history                     = _('ip history'),
+                     chat_size_default              = _('default (300px)'),
+                     chat_size_s                    = _('small (380px)'),
+                     chat_size_m                    = _('medium (480px)'),
+                     chat_size_l                    = _('large (600px)'),
+                     chat_size_xl                   = _('extra large (780px)'),
+                     chat_size_25                   = _('25%'),
+                     chat_size_33                   = _('33%'),
+                     chat_size_40                   = _('40%'),
+                     chat_size_50                   = _('50%'),
+                     chat_size_60                   = _('60%'),
+                     subs_do_nothing                = _('no'),
+                     subs_reset_subscriptions       = _('yes (danger)'),
+                     theme_nightmode                = _('Night mode'),
+                     theme_daymode                  = _('Day mode'),
+                     site_index_home                = _(g.home_name.title()),
+                     site_index_front               = _(g.front_name.title()),
+                     site_index_all                 = _(g.all_name.title()),
                      )
 
 def menu_style(type):
@@ -280,7 +307,7 @@ class NavButton(Styled):
     _style = "plain"
 
     def __init__(self, title, dest, sr_path=True, aliases=None,
-                 target="", use_params=False, css_class='', data=None):
+                 target="", use_params=False, css_class='', data=None, retain_extension=True):
         aliases = aliases or []
         aliases = set(_force_unicode(a.rstrip('/')) for a in aliases)
         if dest:
@@ -295,6 +322,7 @@ class NavButton(Styled):
         self.target = target
         self.use_params = use_params
         self.data = data
+        self.retain_extension = retain_extension
 
         Styled.__init__(self, self._style, css_class=css_class)
 
@@ -313,7 +341,6 @@ class NavButton(Styled):
 
     def is_selected(self):
         stripped_path = _force_unicode(request.path.rstrip('/').lower())
-
         if not (self.sr_path or c.default_sr):
             return False
         if stripped_path == self.bare_path:
@@ -422,12 +449,12 @@ class OffsiteButton(NavButton):
 
 
 class SubredditButton(NavButton):
-    from r2.models.subreddit import Frontpage, Mod, All, Random, RandomSubscription
+    from r2.models.subreddit import Frontpage, Mod, All, Random, RandomSubscription, HomeSR, DefaultSR, AllSR
     # TRANSLATORS: This refers to /r/mod
     name_overrides = {Mod: N_("mod"),
     # TRANSLATORS: This refers to the user's front page
-                      Frontpage: N_("front"),
-                      All: N_("all"),
+                      Frontpage: N_(g.front_name),
+                      All: N_(g.all_name),
                       Random: N_("random"),
     # TRANSLATORS: Gold feature, "myrandom", a random subreddit from your subscriptions
                       RandomSubscription: N_("myrandom")}
@@ -437,6 +464,14 @@ class SubredditButton(NavButton):
         name = self.name_overrides.get(sr)
         name = _(name) if name else sr.name
         self.isselected = (c.site == sr)
+        self.pref_site_index = c.user.pref_site_index
+
+        if isinstance(c.site, DynamicSR):
+            self.isselected = True
+
+        if sr.is_homepage:
+            self.path = '/'
+
         NavButton.__init__(self, name, sr.path, sr_path=False,
                            css_class=css_class, data=data)
 
@@ -453,6 +488,7 @@ class SubredditButton(NavButton):
             ('isselected', self.isselected),
             ('css_class', self.css_class),
             ('data', self.data),
+            ('pref_site_index', self.pref_site_index),
         ]
 
 
@@ -524,7 +560,7 @@ class SortMenu(NavMenu):
 
     # these are _ prefixed to avoid colliding with NavMenu attributes
     _default = 'hot'
-    _options = ('hot', 'new', 'top', 'old', 'controversial')
+    _options = ('hot', 'new', 'top', 'old', g.voting_upvote_path, g.voting_controversial_path)
     _type = 'lightdrop'
     _title = N_("sorted by")
 
@@ -555,7 +591,8 @@ class SortMenu(NavMenu):
         "new": operators.desc('_date'),
         "old": operators.asc('_date'),
         "top": operators.desc('_score'),
-        "controversial": operators.desc('_controversy'),
+        g.voting_upvote_path: operators.desc('_upvotes'),
+        g.voting_controversial_path: operators.desc('_controversy'),
         "confidence": operators.desc('_confidence'),
         "random": operators.shuffled('_confidence'),
         "qa": operators.desc('_qa'),
@@ -573,15 +610,15 @@ class SortMenu(NavMenu):
 
 class ProfileSortMenu(SortMenu):
     _default = 'new'
-    _options = ('hot', 'new', 'top', 'controversial')
+    _options = ('hot', 'new', 'top', g.voting_upvote_path, g.voting_controversial_path)
 
 
 class CommentSortMenu(SortMenu):
     """Sort menu for comments pages"""
-    _default = 'confidence'
-    _options = ('confidence', 'top', 'new', 'controversial', 'old', 'random',
+    _default = 'new'
+    _options = ('confidence', 'top', 'new', g.voting_upvote_path, g.voting_controversial_path, 'old', 'random',
                 'qa',)
-    hidden_options = ['random']
+    hidden_options = ['random', 'confidence', 'qa', 'old']
 
     # Links may have a suggested sort of 'blank', which is an explicit None -
     # that is, do not check the subreddit for a suggested sort, either.
@@ -602,6 +639,22 @@ class CommentSortMenu(SortMenu):
         else:
             return title
 
+## CUSTOM
+class ChatSidebarSizeMenu(SortMenu):
+    # Note: There's a model default in account.py
+    # Can add a label like default/recommended
+    # _default = 'chat_size_m'
+    _options = (
+        'chat_size_default',
+        'chat_size_s', 
+        'chat_size_m', 
+        'chat_size_l', 
+        'chat_size_xl',
+        'chat_size_25',
+        'chat_size_33',
+        'chat_size_40',
+        'chat_size_50',
+        'chat_size_60')
 
 class SearchSortMenu(SortMenu):
     """Sort menu for search pages."""
@@ -629,7 +682,7 @@ class SubredditSearchSortMenu(SortMenu):
 class RecSortMenu(SortMenu):
     """Sort menu for recommendation page"""
     _default = 'new'
-    _options = ('hot', 'new', 'top', 'controversial', 'relevance')
+    _options = ('hot', 'new', 'top', g.voting_upvote_path, g.voting_controversial_path, 'relevance')
 
 
 class KindMenu(SortMenu):
@@ -669,7 +722,7 @@ class ProfileOverviewTimeMenu(TimeMenu):
 
 class ControversyTimeMenu(TimeMenu):
     """time interval for controversial sort.  Make default time 'day' rather than 'all'"""
-    _default = 'day'
+    _default = 'all'
     button_cls = PostButton
 
 
@@ -698,3 +751,23 @@ class AdminTimeMenu(TimeMenu):
     get_param = 't'
     _default = 'day'
     _options = ('hour', 'day', 'week')
+
+# CUSTOM: mass unsubscribe
+class SubscriptionsSubscribeMenu(SortMenu):
+    _options = (
+        'subs_do_nothing',
+        'subs_reset_subscriptions')
+
+# CUSTOM: site theme
+class SiteThemeMenu(SortMenu):
+    _default = 'theme_nightmode'
+    _options = (
+        'theme_nightmode',
+        'theme_daymode')
+
+class SiteIndexMenu(SortMenu):
+    _default = 'site_index_home'
+    _options = (
+        'site_index_home',
+        'site_index_front',
+        'site_index_all')

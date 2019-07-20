@@ -138,6 +138,8 @@ from r2.lib.merge import ConflictException
 from datetime import datetime, timedelta
 from urlparse import urlparse
 
+# CUSTOM: Site Theme
+from r2.lib.validator.preferences import set_prefs
 
 class ApiminimalController(MinimalController):
     """
@@ -165,12 +167,12 @@ class ApiminimalController(MinimalController):
 
         iden = get_iden()
         jquery("body").captcha(iden)
-        form._send_data(iden = iden) 
+        form._send_data(iden = iden)
 
 
 class ApiController(RedditController):
     """
-    Controller which deals with almost all AJAX site interaction.  
+    Controller which deals with almost all AJAX site interaction.
     """
     @validatedForm()
     def ajax_login_redirect(self, form, jquery, dest):
@@ -271,7 +273,7 @@ class ApiController(RedditController):
         """
         Check whether a password is valid.
         """
-    
+
         if not (responder.has_errors("passwd", errors.SHORT_PASSWORD) or
                 responder.has_errors("passwd", errors.BAD_PASSWORD)):
             # Pylons does not handle 204s correctly.
@@ -399,7 +401,7 @@ class ApiController(RedditController):
         else:
             # Only let users in timeout message the admins
             if (to and not (isinstance(to, Subreddit) and
-                    '/r/%s' % to.name == g.admin_message_acct)):
+                    '/%s/%s' % (g.brander_community_abbr, to.name) == g.admin_message_acct)):
                 VNotInTimeout().run(target=to)
             m, inbox_rel = Message._new(c.user, to, subject, body, request.ip)
 
@@ -567,6 +569,12 @@ class ApiController(RedditController):
             VRatelimit.ratelimit(rate_user=True, rate_ip = True,
                                  prefix = "rate_submit_")
 
+        # CUSTOM: sendreplies is sticky, sets a preference
+        if c.user.pref_sendreplies is not sendreplies:
+            prefs = {"pref_sendreplies": sendreplies}
+            set_prefs(c.user, prefs)
+            c.user._commit()
+
         queries.new_link(l)
         l.update_search_index()
         g.events.submit_event(l, request=request, context=c)
@@ -601,7 +609,7 @@ class ApiController(RedditController):
             else:
                 form.set_text(".title-status", _("no title found"))
             form._send_data(title=title)
-        
+
     def _login(self, responder, user, rem = None):
         """
         AJAX login handler, used by both login and register to set the
@@ -684,7 +692,7 @@ class ApiController(RedditController):
         """
         if container and container.is_moderator(c.user):
             container.remove_moderator(c.user)
-            ModAction.create(container, c.user, 'removemoderator', target=c.user, 
+            ModAction.create(container, c.user, 'removemoderator', target=c.user,
                              details='remove_self')
 
     @require_oauth2_scope("modself")
@@ -783,7 +791,7 @@ class ApiController(RedditController):
 
         if not victim:
             abort(400, 'No user specified')
-        
+
         if type in self._sr_friend_types:
             mod_action_by_type = dict(
                 banned='unbanuser',
@@ -803,7 +811,7 @@ class ApiController(RedditController):
                 # The requesting user is marked as spam or banned, and is
                 # trying to do a mod action. The only action they should be
                 # allowed to do and have it stick is demodding themself.
-                if c.user._spam:
+                if c.user._spam or c.user.is_global_banned:
                     return
                 VNotInTimeout().run(action_name=action, target=victim)
         else:
@@ -877,7 +885,7 @@ class ApiController(RedditController):
         if form.has_errors('permissions', errors.INVALID_PERMISSIONS):
             return
 
-        if c.user._spam:
+        if c.user._spam or c.user.is_global_banned:
             return
 
         type, permissions = type_and_permissions
@@ -988,7 +996,7 @@ class ApiController(RedditController):
                 abort(403, 'forbidden')
 
             # Don't let banned users make subreddit access changes
-            if c.user._spam:
+            if c.user._spam or c.user.is_global_banned:
                 return
             VNotInTimeout().run(action_name=action, target=friend)
 
@@ -1055,7 +1063,7 @@ class ApiController(RedditController):
         unbanned_types = ("moderator", "moderator_invite",
                           "contributor", "wikicontributor")
         if type in unbanned_types:
-            if container.is_banned(friend):
+            if container.is_banned(friend) or friend.is_global_banned:
                 c.errors.add(errors.BANNED_FROM_SUBREDDIT, field="name")
                 form.set_error(errors.BANNED_FROM_SUBREDDIT, "name")
                 return
@@ -1169,7 +1177,7 @@ class ApiController(RedditController):
         if type == "banned":
             # If the ban is new or has had the duration changed,
             # send a ban message
-            if (friend.has_interacted_with(container) and 
+            if (friend.has_interacted_with(container) and
                     (new or log_details)):
                 send_ban_message(container, c.user, friend,
                     ban_message, duration, new)
@@ -1196,7 +1204,7 @@ class ApiController(RedditController):
         perm = 'wiki' if type.startswith('wiki') else 'access'
         if (not c.user_is_admin
             and (not c.site.is_moderator_with_perms(c.user, perm))):
-            if c.user._spam:
+            if c.user._spam or c.user.is_global_banned:
                 return
             else:
                 abort(403, 'forbidden')
@@ -1315,7 +1323,7 @@ class ApiController(RedditController):
                 form.set_text('.status', _('your email has been updated'))
 
         # user is removing their email
-        if (not email and c.user.email and 
+        if (not email and c.user.email and
             (errors.NO_EMAILS, 'email') in c.errors):
             c.errors.remove((errors.NO_EMAILS, 'email'))
             if c.user.email:
@@ -1610,7 +1618,7 @@ class ApiController(RedditController):
     @api_doc(api_section.links_and_comments)
     def POST_set_contest_mode(self, form, jquery, thing, state, timeout):
         """Set or unset "contest mode" for a link's comments.
-        
+
         `state` is a boolean that indicates whether you are enabling or
         disabling contest mode - true to enable, false to disable.
 
@@ -1638,7 +1646,7 @@ class ApiController(RedditController):
     def POST_set_subreddit_sticky(self, form, jquery, thing, state, num,
             timeout):
         """Set or unset a Link as the sticky in its subreddit.
-        
+
         `state` is a boolean that indicates whether to sticky or unsticky
         this post - true to sticky, false to unsticky.
 
@@ -1647,7 +1655,7 @@ class ApiController(RedditController):
         if there is already a post stickied in that slot it will be replaced.
         If there is no post in the specified slot to replace, or `num` is None,
         the bottom-most slot will be used.
-        
+
         """
         if not isinstance(thing, Link):
             return
@@ -1741,7 +1749,8 @@ class ApiController(RedditController):
 
         if not (c.user._spam or
                 c.user.ignorereports or
-                (sr and sr.is_banned(c.user))):
+                c.user.is_global_banned or
+		(sr and sr.is_banned(c.user))):
             Report.new(c.user, thing, reason)
             admintools.report(thing)
 
@@ -1962,7 +1971,7 @@ class ApiController(RedditController):
 
         if isinstance(item, Link) and not item.is_self:
             return abort(403, "forbidden")
-            
+
         if getattr(item, 'admin_takedown', False):
             # this item has been takendown by the admins,
             # and not not be edited
@@ -2143,7 +2152,7 @@ class ApiController(RedditController):
                     sr = Subreddit._byID(parent.sr_id, data=True)
                     if sr:
                         sr_name = sr.name
-                is_messaging_admins = ('/r/%s' % sr_name) == g.admin_message_acct
+                is_messaging_admins = ('/%s/%s' % (g.brander_community_abbr, sr_name)) == g.admin_message_acct
 
                 # Users in timeout can only message the admins.
                 if not (sr_name and is_messaging_admins):
@@ -2265,7 +2274,7 @@ class ApiController(RedditController):
             pm_message = message + message_body % {
                     "comments_url": pm_comments_url,
                 }
-        
+
         # E-mail everyone
         emailer.share(link, emails, body=email_message or "")
 
@@ -2274,7 +2283,7 @@ class ApiController(RedditController):
         # Prepend this subject to the message - we're repeating ourselves
         # because it looks very abrupt without it.
         pm_message = "%s\n\n%s" % (subject, pm_message)
-        
+
         for target in users:
             m, inbox_rel = Message._new(c.user, target, subject,
                                         pm_message, request.ip)
@@ -2292,8 +2301,9 @@ class ApiController(RedditController):
     @require_oauth2_scope("vote")
     @noresponse(VUser(),
                 VModhash(),
-                direction=VInt("dir", min=-1, max=1,
-                    docs={"dir": "vote direction. one of (1, 0, -1)"}
+                # CUSTOM: voting model
+                direction=VInt("dir", min=-11, max=11,
+                    docs={"dir": "vote direction. one of (1, -1, 11, -11)"}
                 ),
                 thing=VByName('id'),
                 rank=VInt("rank", min=1))
@@ -2303,14 +2313,16 @@ class ApiController(RedditController):
 
         `id` should be the fullname of the Link or Comment to vote on.
 
-        `dir` indicates the direction of the vote. Voting `1` is an upvote,
-        `-1` is a downvote, and `0` is equivalent to "un-voting" by clicking
-        again on a highlighted arrow.
+        `dir` indicates the direction of the vote. Voting `1` is an insightful vote (tracked as `ups`),
+        and `-1` is a funny vote (tracked as `downs`). `11` is un-voting an insightful vote and `-11` is
+        un-voting a funny vote. Un-voting is accomplished by clicking again on the respective highlighted
+        voting button/link.
 
         **Note: votes must be cast by humans.** That is, API clients proxying a
         human's action one-for-one are OK, but bots deciding how to vote on
-        content or amplifying a human's vote are not. See [the reddit
-        rules](/rules) for more details on what constitutes vote cheating.
+        content or amplifying a human's vote are not. See [the SaidIt
+        Content Policy](/s/SaidIt/comments/j1/the_saiditnet_terms_and_content_policy/)
+        for more details on what constitutes vote cheating.
 
         """
 
@@ -2340,10 +2352,14 @@ class ApiController(RedditController):
         # convert vote direction to enum value
         if direction == 1:
             direction = Vote.DIRECTIONS.up
+        elif direction == 11:
+            direction = Vote.DIRECTIONS.unup
         elif direction == -1:
             direction = Vote.DIRECTIONS.down
-        elif direction == 0:
-            direction = Vote.DIRECTIONS.unvote
+        elif direction == -11:
+            direction = Vote.DIRECTIONS.undown
+        else:
+            return abort(400, "Bad Request")
 
         cast_vote(c.user, thing, direction, rank=rank)
 
@@ -2412,7 +2428,7 @@ class ApiController(RedditController):
             if links:
 
                 jquery('#preview-table').show()
-    
+
                 # do a regular link
                 jquery('#preview_link_normal').html(
                     SubredditStylesheet.rendered_link(
@@ -2429,7 +2445,7 @@ class ApiController(RedditController):
                 jquery('#preview_link_stickied').html(
                     SubredditStylesheet.rendered_link(
                         links, media='off', compress=False, stickied=True))
-    
+
             # and do a comment
             comments = SubredditStylesheet.find_preview_comments(c.site)
             if comments:
@@ -2469,7 +2485,7 @@ class ApiController(RedditController):
             details_text="del_image", target=c.site)
 
         wiki.ImagesByWikiPage.delete_image(c.site, "config/stylesheet", name)
-        ModAction.create(c.site, c.user, action='editsettings', 
+        ModAction.create(c.site, c.user, action='editsettings',
                          details='del_image', description=name)
 
     @require_oauth2_scope("modconfig")
@@ -2495,7 +2511,7 @@ class ApiController(RedditController):
             c.site.header = None
             c.site.header_size = None
             c.site._commit()
-            ModAction.create(c.site, c.user, action='editsettings', 
+            ModAction.create(c.site, c.user, action='editsettings',
                              details='del_header')
 
         # hide the button which started this
@@ -2504,7 +2520,7 @@ class ApiController(RedditController):
         form.find('.img-preview-container').hide()
         # reset the status boxes
         form.set_text('.img-status', _("deleted"))
-        
+
     @require_oauth2_scope("modconfig")
     @validatedForm(
         VSrModerator(perms='config'),
@@ -2630,12 +2646,12 @@ class ApiController(RedditController):
         # for backwards compatibility, map header to upload_type
         if upload_type is None:
             upload_type = 'header' if header else 'img'
-        
+
         if upload_type == 'img' and not name:
             # error if the name wasn't specified and the image was not for a sponsored link or header
             # this may also fail if a sponsored image was added and the user is not an admin
             errors['BAD_CSS_NAME'] = _("bad image name")
-        
+
         if upload_type == 'img' and not c.user_is_admin:
             image_count = wiki.ImagesByWikiPage.get_image_count(
                 c.site, "config/stylesheet")
@@ -2700,7 +2716,7 @@ class ApiController(RedditController):
 
             ModAction.create(c.site, c.user, action='editsettings', **kw)
 
-            return UploadedImage(_('saved'), new_url, name, 
+            return UploadedImage(_('saved'), new_url, name,
                                  errors=errors, form_id=form_id).render()
 
     @require_oauth2_scope("modconfig")
@@ -2835,6 +2851,14 @@ class ApiController(RedditController):
         if sr and feature.is_enabled('related_subreddits'):
             keyword_fields.append('related_subreddits')
 
+        # CUSTOM - Add chat_enabled subreddit property
+        if feature.is_enabled('chat'):
+            keyword_fields.append('chat_enabled')
+            validator = VBoolean('chat_enabled')
+            value = request.params.get('chat_enabled')
+            kw['chat_enabled'] = validator.run(value)
+
+
         kw = {k: v for k, v in kw.iteritems() if k in keyword_fields}
 
         public_description = kw.pop('public_description')
@@ -2866,7 +2890,7 @@ class ApiController(RedditController):
                 public_description,
                 'public_description',
             )
-        
+
         if not sr and not c.user.can_create_subreddit:
             form.set_error(errors.CANT_CREATE_SR, "")
             c.errors.add(errors.CANT_CREATE_SR, field="")
@@ -2937,7 +2961,7 @@ class ApiController(RedditController):
                                'submit_text',
                                'description'), errors.TOO_LONG)):
             pass
-        elif (form.has_errors(('wiki_edit_karma', 'wiki_edit_age'), 
+        elif (form.has_errors(('wiki_edit_karma', 'wiki_edit_age'),
                               errors.BAD_NUMBER)):
             pass
         elif form.has_errors('comment_score_hide_mins', errors.BAD_NUMBER):
@@ -3106,7 +3130,7 @@ class ApiController(RedditController):
         """
         if not thing: return
         if thing._deleted: return
-        if c.user._spam:
+        if c.user._spam or c.user.is_global_banned:
            self.abort403()
 
         # Don't allow user in timeout to approve link or comment
@@ -3275,6 +3299,7 @@ class ApiController(RedditController):
 
             previously_distinguished = hasattr(thing, 'distinguished')
             user_can_notify = (not c.user._spam and
+                               not c.user.is_global_banned and
                                c.user._id not in to.enemies and
                                to.name != c.user.name)
 
@@ -3871,7 +3896,7 @@ class ApiController(RedditController):
             g.events.quarantine_event('quarantine_opt_in', sr,
                 request=request, context=c)
             QuarantinedSubredditOptInsByAccount.opt_in(c.user, sr)
-        return self.redirect('/r/%s' % sr.name)
+        return self.redirect('/%s/%s' % (g.brander_community_abbr, sr.name))
 
     @validatedForm(VAdmin(),
                    VModhash(),
@@ -4044,14 +4069,14 @@ class ApiController(RedditController):
         If both `cssclass` and `flairtext` are the empty string for a given
         `user`, instead clears that user's flair.
 
-        Returns an array of objects indicating if each flair setting was 
+        Returns an array of objects indicating if each flair setting was
         applied, or a reason for the failure.
 
         """
 
         if not flair_csv:
             return
-        
+
         limit = 100  # max of 100 flair settings per call
         results = FlairCsv()
         # encode to UTF-8, since csv module doesn't fully support unicode
@@ -4489,7 +4514,7 @@ class ApiController(RedditController):
         if secret_used and not award.api_ok:
             c.errors.add(errors.NO_API, field='secret')
             form.has_errors('secret', errors.NO_API)
-        
+
         if form.has_error():
             return
 
@@ -4526,7 +4551,7 @@ class ApiController(RedditController):
         if form.has_errors("recipient",
                            errors.USER_DOESNT_EXIST, errors.NO_USER):
             return
-        
+
         if not recipient.gold and num_months < 0:
             form.set_text(".status", _('no gold to take'))
             return
@@ -5246,3 +5271,108 @@ class ApiController(RedditController):
         c.user.pref_use_global_defaults = True
         c.user._commit()
         jquery.refresh()
+
+    # TODO: form validation and error display is janky
+    @validatedForm(VAdmin(),
+                   VModhash(),
+                   globalban=VByName("fullname"),
+                   colliding_globalban=VGlobalBanByUsername(("recipient", "fullname")),
+                   recipient=VExistingUname("recipient"),
+                   notes=VLength("notes", max_length = 1000, empty_error=None))
+    def POST_editglobalban(self, form, jquery, globalban, colliding_globalban, recipient, notes):
+
+        # INVALID_OPTION is set by VGlobalBanByUsername
+        if form.has_errors("recipient", errors.INVALID_OPTION):
+            form.set_text(".status", "user already globally banned")
+            return
+
+        if form.has_error():
+            return
+
+        if recipient is None:
+            form.set_text(".status", "user does not exist")
+            return
+
+        if globalban is None:
+            GlobalBan._new(recipient._id, notes)
+            form.set_html(".status", "saved, <a href='#' onclick='location.reload();'>reload</a> to see changes")
+            return
+
+        globalban.notes = notes
+        globalban._commit()
+        form.set_html(".status", _('saved, <a href="#" onclick="location.reload();">reload</a> to see changes'))
+
+
+    @validatedForm(VAdmin(),
+                VModhash(),
+                thing = VByName('globalban_id'))
+    def POST_deleteglobalban(self, form, jquery, thing):
+        if not thing or thing._deleted: return
+        if not isinstance(thing, GlobalBan): return
+        if form.has_error():
+            return
+
+        thing._deleted = True
+        thing._commit()
+
+        # _new() handles this for creation
+        cache_clear = GlobalBan._all_global_bans(_update=True)
+        cache_clear = GlobalBan._all_banned_users_cache(_update=True)
+        form.set_html(".status", _('deleted, <a href="#" onclick="location.reload();">reload</a> to see it'))
+
+    # TODO: validate is ip
+    @validatedForm(VAdmin(),
+                   VModhash(),
+                   ipban=VByName("fullname"), # all things have a fullname
+                   colliding_ipban=VIpBanByIp(("ip", "fullname")),
+                   ip=VLength("ip", max_length = 1000),
+                   notes=VLength("notes", max_length = 1000, empty_error=None))
+    def POST_editipban(self, form, jquery, ipban, colliding_ipban, ip, notes):
+        if form.has_errors("ip", errors.INVALID_OPTION):
+            form.set_text(".status", "ip already banned")
+            return
+
+        if form.has_error():
+            return
+
+        if ip is None:
+            form.set_text(".status", "ip does not exist")
+            return
+
+        if ipban is None:
+            IpBan._new(ip, notes)
+            form.set_html(".status", "saved, <a href='#' onclick='location.reload();'>reload</a> to see changes")
+            return
+
+        ipban.notes = notes
+        ipban._commit()
+        form.set_html(".status", _('saved, <a href="#" onclick="location.reload();">reload</a> to see changes'))
+
+
+    # CUSTOM: IP Bans
+    @validatedForm(VAdmin(),
+                VModhash(),
+                thing = VByName('ipban_id'))
+    def POST_deleteipban(self, form, jquery, thing):
+        if not thing or thing._deleted: return
+        if not isinstance(thing, IpBan): return
+        if form.has_error():
+            return
+
+        thing._deleted = True
+        thing._commit()
+
+        # _new() handles this for creation
+        cache_clear = IpBan._all_bans(_update=True)
+        form.set_html(".status", _('deleted, <a href="#" onclick="location.reload();">reload</a> to see it'))
+
+    # CUSTOM: Site Theme
+    @csrf_exempt
+    @validate(pref_lightswitch = VBoolean('lightswitch'))
+    def POST_lightswitch(self, pref_lightswitch):
+        theme = g.live_config['site_theme_lightswitch_off']
+        if pref_lightswitch:
+            theme = g.live_config['site_theme_lightswitch_on']
+        prefs = {"pref_lightswitch": pref_lightswitch, "pref_site_theme": theme}
+        set_prefs(c.user, prefs)
+        c.user._commit()

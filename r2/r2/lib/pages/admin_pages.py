@@ -19,6 +19,8 @@
 # All portions of the code written by reddit are Copyright (c) 2006-2015 reddit
 # Inc. All Rights Reserved.
 ###############################################################################
+# CUSTOM
+import urllib
 
 from pylons import config
 from pylons import tmpl_context as c
@@ -39,8 +41,11 @@ from r2.lib.utils import timesince
 def admin_menu(**kwargs):
     buttons = [
         OffsiteButton("traffic", "/traffic"),
-        NavButton(menu.awards, "awards"),
-        NavButton(menu.errors, "error log"),
+        NavButton(menu.awards, "awards", sr_path=False),
+        NavButton(menu.errors, "error log", sr_path=False),
+        # CUSTOM
+        NavButton(menu.global_user_bans, "globaluserbans", sr_path=False),
+        NavButton(menu.ip_bans, "ipbans", sr_path=False),
     ]
 
     admin_menu = NavMenu(buttons, title='admin tools', base_path='/admin',
@@ -75,8 +80,12 @@ class AdminPage(Reddit):
         Reddit.__init__(self, nav_menus = nav_menus, *a, **kw)
 
 class AdminProfileMenu(NavMenu):
-    def __init__(self, path):
-        NavMenu.__init__(self, [], base_path = path,
+    def __init__(self, path, user):
+        # CUSTOM
+        buttons = [
+            OffsiteButton(menu.ip_history, '/admin/iphistory?username=' + urllib.quote_plus(user.name)),
+        ]
+        NavMenu.__init__(self, buttons, base_path = path,
                          title = 'admin', type="tabdrop")
 
 
@@ -100,13 +109,15 @@ class AdminNotesSidebar(Templated):
         "user": N_("user"),
     }
 
-    def __init__(self, system, subject):
+    def __init__(self, system, subject, subject_user=None):
         from r2.models.admin_notes import AdminNotesBySystem
 
         self.system = system
         self.subject = subject
         self.author = c.user.name
         self.notes = AdminNotesBySystem.in_display_order(system, subject)
+        self.global_ban = 'yes' if subject_user and subject_user.is_global_banned else 'no'
+
         # Convert timestamps for easier reading/translation
         for note in self.notes:
             note["timesince"] = timesince(note["when"])

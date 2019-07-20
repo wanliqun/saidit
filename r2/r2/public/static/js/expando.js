@@ -4,6 +4,35 @@
     return elem.tagName === 'A';
   }
 
+  function initImageResize($wrapper, $link, $img) {
+    var threshold = 3;
+    $wrapper.css('max-width', 'none'); // TODO: remove the max-width inline style from mediapreview.html instead?
+    $link.click(function(event){
+      event.preventDefault();
+    })
+    .mousedown(function(event) {
+      event.preventDefault(); // prevents FF from overlaying the image with blue
+      $link.data('dragging', true).data('startX', event.pageX).data('startY', event.pageY);
+      $img.data('original-width', $img.width()).css('width', $img.width() + 'px');
+    })
+    .mousemove(function(event) {
+      if (!$link.data('dragging')) return;
+      $img.css('cursor', 'nwse-resize').css('width', ($img.data('original-width') + event.pageX - $link.data('startX') + event.pageY - $link.data('startY')) + 'px');
+     })
+    .mouseup(function(event) {
+      // detect click not drag, goto link
+      if (Math.abs(event.pageX - $link.data('startX') + event.pageY - $link.data('startY')) <= threshold) {
+        location.href = $link.attr('href');
+      }
+      $link.data('dragging', false);
+      $img.css('cursor', 'pointer');
+    })
+    // prevent: leave container, mouse up, re-enter, still resizing
+    .mouseenter(function(event){
+      $link.data('dragging', false);
+    });
+  }
+
   var Expando = Backbone.View.extend({
     buttonSelector: '.expando-button',
     expandoSelector: '.expando',
@@ -156,6 +185,12 @@
         this.$expando.html(this.cachedHTML);
       }
 
+      // CUSTOM: trigger markdown expando init
+      if (this.linkType == 'self') {
+        var $e2 = $.Event('expando:hashtml', { expando: this });
+        this.$el.trigger($e2);
+      }
+
       if (!this._expandoEventData.provider) {
         // this needs to be deferred until the actual embed markup is available.
         var $media = this.$expando.children();
@@ -174,6 +209,14 @@
     showExpandoContent: function() {
       this.$expando.removeClass('expando-uninitialized');
       this.$expando.show();
+
+      // CUSTOM: add image resizing to image media previews
+      if (this.linkType == 'link') {
+        var $img = this.$expando.find('img.preview');
+        if ($img) {
+          initImageResize(this.$expando.find('.media-preview'), this.$expando.find('.media-preview-content a'), $img);
+        }
+      }
     },
 
     fireExpandEvent: function() {

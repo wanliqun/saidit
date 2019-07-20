@@ -108,11 +108,11 @@
   </div>
 
   <% sr_count = format_html('<span class="count">%s</span>&#32;', len(thing.srs)) %>
-  <h3>${_wsf('%(count)s subreddits in this multi:', count=sr_count)}</h3>
+  <h3>${_wsf('%(count)s subs in this multi:', count=sr_count)}</h3>
   <ul class="subreddits">
   %for sr in thing.srs:
     <li data-name="${sr.name}">
-      <a href="/r/${sr.name}">/r/${sr.name}</a>
+      <a href="/${g.brander_community_abbr}/${sr.name}">/${g.brander_community_abbr}/${sr.name}</a>
       <button class="remove-sr">${_('remove')}</button>
     </li>
   %endfor
@@ -151,14 +151,15 @@
       <h1>${_("no more suggestions!")}</h1>
       <div class="heading">${_("would you like to...")}</div>
       <ul>
-        <li>
-          <a href="/r/ModeratorDuck/wiki/subreddit_classification" target="_blank">
-            ${_("check out subreddits by category")}
-          </a>
-        </li>
-        <li>
-          <a href="/r/random" target="_blank">
-            ${_("explore a random subreddit")}
+        ## CUSTOM: disabled, not a very good resource, see https://www.reddit.com/r/ModeratorDuck/wiki/subreddit_classification
+        ## <li>
+        ##  <a href="/r/ModeratorDuck/wiki/subreddit_classification" target="_blank">
+        ##    ${_("check out subs by category")}
+        ##  </a>
+        ## </li>
+        ## <li>
+          <a href="/${g.brander_community_abbr}/random" target="_blank">
+            ${_("explore a random sub")}
           </a>
         </li>
         <li>
@@ -171,3 +172,4 @@
 
   </div>
 </div>
+

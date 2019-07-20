@@ -111,7 +111,7 @@ class FrontController(RedditController):
                       (dest, article._id36,
                        quote_plus(title_to_url(article.title).encode('utf-8')))
             if not c.default_sr:
-                new_url = "/r/%s%s" % (c.site.name, new_url)
+                new_url = "/%s/%s%s" % (g.brander_community_abbr, c.site.name, new_url)
             if comment:
                 new_url = new_url + "/%s" % comment._id36
             if c.extension:
@@ -555,13 +555,13 @@ class FrontController(RedditController):
 
     @validate(VUser(),
               name=nop('name'))
-    def GET_newreddit(self, name):
-        """Create a subreddit form"""
+    def GET_newreddit(self, name):        
+	"""Create a subreddit form"""
         VNotInTimeout().run(action_name="pageview", details_text="newreddit")
         title = _('create a subreddit')
         captcha = Captcha() if c.user.needs_captcha() else None
         content = CreateSubreddit(name=name or '', captcha=captcha)
-        res = FormPage(_("create a subreddit"),
+        res = FormPage(_("create a sub"),
                        content=content,
                        captcha=captcha,
                        ).render()
@@ -603,7 +603,9 @@ class FrontController(RedditController):
 
     modname_splitter = re.compile('[ ,]+')
 
-    @require_oauth2_scope("modlog")
+    # Public modlogs
+    # @require_oauth2_scope("modlog")
+    @require_oauth2_scope("read")
     @disable_subreddit_css()
     @paginated_listing(max_page_size=500, backend='cassandra')
     @validate(
@@ -626,10 +628,11 @@ class FrontController(RedditController):
         The `type` parameter is optional and if sent limits the log entries
         returned to only those of the type specified.
 
-        """
-        if not c.user_is_loggedin or not (c.user_is_admin or
-                                          c.site.is_moderator(c.user)):
-            return self.abort404()
+        """ 
+        # Public modlogs
+        # if not c.user_is_loggedin or not (c.user_is_admin or
+        #                                   c.site.is_moderator(c.user)):
+        #     return self.abort404()
 
         VNotInTimeout().run(action_name="pageview", details_text="modlog")
         if mod:
@@ -694,7 +697,9 @@ class FrontController(RedditController):
                          title=_('filter by action'), type='lightdrop', css_class='modaction-drop'),
                 NavMenu(mod_buttons, base_path=base_path,
                         title=_('filter by moderator'), type='lightdrop')]
-        extension_handling = "private" if c.user.pref_private_feeds else False
+        # Public modlogs
+        # extension_handling = "private" if c.user.pref_private_feeds else False
+        extension_handling = "private" if c.user_is_loggedin and c.user.pref_private_feeds else False
         return EditReddit(content=panes,
                           nav_menus=menus,
                           location="log",
@@ -912,7 +917,7 @@ class FrontController(RedditController):
     @validate(location=nop('location'),
               created=VOneOf('created', ('true','false'),
                              default='false'))
-    @api_doc(api_section.subreddits, uri="/r/{subreddit}/about/edit")
+    @api_doc(api_section.subreddits, uri="/" + g.brander_community_abbr + "/{subreddit}/about/edit")
     def GET_editreddit(self, location, created):
         """Get the current settings of a subreddit.
 
@@ -930,7 +935,7 @@ class FrontController(RedditController):
             return self._edit_normal_reddit(location, created)
 
     @require_oauth2_scope("read")
-    @api_doc(api_section.subreddits, uri='/r/{subreddit}/about')
+    @api_doc(api_section.subreddits, uri='/' + g.brander_community_abbr + '/{subreddit}/about')
     def GET_about(self):
         """Return information about the subreddit.
 
@@ -958,7 +963,7 @@ class FrontController(RedditController):
         return Reddit(content=usertext).render()
 
     @require_oauth2_scope("read")
-    @api_doc(api_section.subreddits, uri='/r/{subreddit}/about/rules')
+    @api_doc(api_section.subreddits, uri='/' + g.brander_community_abbr + '/{subreddit}/about/rules')
     def GET_rules(self):
         """Get the rules for the current subreddit"""
         if not feature.is_enabled("subreddit_rules", subreddit=c.site.name):
@@ -971,7 +976,7 @@ class FrontController(RedditController):
             "link": _("Posts only"),
             "comment": _("Comments only"),
         }
-        title_string = _("Rules for r/%(subreddit)s") % { "subreddit" : c.site.name }
+        title_string = _("Rules for " + g.brander_community_abbr + "/%(subreddit)s") % { "subreddit" : c.site.name }
         content = Rules(
             title=title_string,
             kind_labels=kind_labels,
@@ -1143,7 +1148,7 @@ class FrontController(RedditController):
         else:
             site = c.site
 
-        has_query = query or not isinstance(site, (DefaultSR, AllSR))
+        has_query = query or not isinstance(site, (DefaultSR, AllSR, HomeSR, DynamicSR))
 
         if not syntax:
             syntax = g.search.SearchQuery.default_syntax
@@ -1237,7 +1242,7 @@ class FrontController(RedditController):
                                                  include_over18=include_over18)
             subreddits = self._search(sr_q, num=sr_num, reverse=reverse,
                                       after=after, count=count, type='sr',
-                                      skip_deleted_authors=False, heading=_('subreddits'),
+                                      skip_deleted_authors=False, heading=_('subs'),
                                       legacy_render_class=legacy_render_class)
 
             # backfill with facets if no subreddit search results
@@ -1718,7 +1723,7 @@ class FormsController(RedditController):
         else:
             return self.abort404()
 
-        return PrefsPage(content=content, infotext=infotext).render()
+        return PrefsPage(content=content, infotext=infotext, location=location).render()
 
     @validate(dest=VDestination())
     def GET_login(self, dest):

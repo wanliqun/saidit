@@ -5,6 +5,9 @@
 @import "search.less";
 @import "interstitial.less";
 
+/* CUSTOM: See more custom imports at end of file */
+@import "feature-chat.less";
+
 .no-select {
     -webkit-user-select: none;
     -moz-user-select: none;
@@ -83,12 +86,20 @@ q:before,q:after { content:''; }
 
 body {
     font: normal x-small verdana, arial, helvetica, sans-serif;
-    background-color: white;
+    position: relative;
+    background-color: #2f2f2f;
     z-index: 1;
     min-height: 100%;
 }
 
-textarea { font:  normal small verdana, arial, helvetica, sans-serif; }
+textarea { font:  normal small verdana, arial, helvetica, sans-serif; 
+	color: white;
+	background-color: #505050;
+	outline: none;
+	border-radius: 12px;
+	padding: 6px;}
+
+textarea:focus { border-color: #488dd0;}
 
 /* [1] fixes a bug in old versions of WebKit, as used in Android 4.0. See
  * https://github.com/necolas/normalize.css/commit/79b3d21b697e ,
@@ -120,14 +131,14 @@ input[type=hidden] { position: absolute; }
 
 h1 { font-size: 18px; font-weight: normal; margin: 10px 0 }
 
-h2 { color: #369; font-size: 13px; }
+h2 { color: #5a90c5; font-size: 13px; }
 h2 a { text-decoration: none }
-h2 a:visited { color: #369 }
+h2 a:visited { color: #5a90c5 }
 h2 a:hover { text-decoration: underline }
 h3 { font-size:110%; /*text-transform:uppercase;*/ }
 
 a img { border: 0 none; }
-a { text-decoration: none; color: #369; }
+a { text-decoration: none; color: #5a90c5; }
 
 /* Polyfill for HTML5 hidden attribute: http://caniuse.com/#feat=hidden */
 [hidden] { display: none; }
@@ -138,7 +149,7 @@ a:focus { -moz-outline-style: none; }
 */
 
 .rounded {
-    border-radius: 7px;
+    border-radius: 12px;
 }
 
 .rounded .morelink {
@@ -241,7 +252,7 @@ ul.flat-vert {text-align: left;}
 
 .flat-vert.title {
     font-family:arial,verdana,helvetica,sans-serif;
-    color: #777;
+    color: #BBB;
     font-size: 18px;
     font-weight: normal;
     margin-bottom: 5px;
@@ -260,17 +271,16 @@ ul.flat-vert {text-align: left;}
     border-bottom: 1px solid #5f99cf;
 
     position: relative;
-    background-color: #cee3f8;
     z-index: 99;
 }
 
-#header-img {margin-top: 2px; margin-right: 5px;}
+#header-img {margin-top: 0px; margin-right: 5px;}
 
 #header-img.default-header {
     text-indent: -9999px;
-    background-image: url(../reddit.com.header.png); /* SPRITE */
-    height: 40px;
-    width: 120px;
+    background-image: url(../saiditlogo.png);  /*NOT-SPRITE */
+    height: 68px;
+    width: 100%;
     display: inline-block;
     vertical-align: bottom;
     margin-bottom: 3px;
@@ -445,7 +455,9 @@ ul.flat-vert {text-align: left;}
     padding-bottom: 0;
     border:none;
 }
-.drop-choices.tabdrop {margin-top: 2px;}
+.drop-choices.tabdrop {margin-top: 40px;}
+/* fix admin dropdown menu */
+#header-bottom-left .drop-choices.tabdrop {margin-top: 0px;}
 .dropdown-title.tabdrop { display: none }
 
 .drop-choices .choice.hidden {
@@ -468,15 +480,23 @@ ul.flat-vert {text-align: left;}
 
 .tabmenu li a {
     padding: 2px 6px 0 6px;
-    background-color: #eff7ff;
+    background-color: #2f2f2f;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+
  }
 
 .tabmenu li.selected a{
     color: orangered;
-    background-color: white;
-    border: 1px solid #5f99cf;
-    border-bottom: 1px solid white;
+    background-color: #2f2f2f;
+    border: 1px solid #000;
+    border-bottom: 1px solid #2f2f2f;
     z-index: 100;
+}
+
+#header-bottom-left .tabdrop span {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
 }
 
 .tabpane-content { border: 1px solid #5f99cf; padding: 4px 4px 4px 4px; }
@@ -484,6 +504,7 @@ ul.flat-vert {text-align: left;}
 .content {
     z-index: 1;
     margin: 7px 5px 0px 5px;
+	color: wheat;
 }
 
 .content .spacer { margin-bottom: 5px }
@@ -494,9 +515,10 @@ ul.flat-vert {text-align: left;}
 
 .side {
     float: right; 
-    background-color: white; 
+    background-color: #2f2f2f; 
     margin: 0px 5px 0 5px;
     width: 300px;
+    color: wheat;
 }
 
 .side .spacer {
@@ -592,7 +614,7 @@ ul.flat-vert {text-align: left;}
     right: -1px;
     height: 31px;
     width: 24px;
-    background: white none no-repeat scroll center left;
+    background: #2f2f2f none no-repeat scroll center left;
     background-image: url(../gradient-nub.png);  /* SPRITE */
 }
 
@@ -620,6 +642,7 @@ ul.flat-vert {text-align: left;}
     padding: 5px;
     background: #E0E0E0;
     border: 1px solid gray;
+    color: black;
 }
 
 .raisedbox h4 { margin-bottom: 3px }
@@ -630,7 +653,7 @@ ul.flat-vert {text-align: left;}
     margin-top: 10px;
     padding: 5px 0 0 44px;
     min-height: 41px;
-    background: white none no-repeat scroll top left;
+    background: #2f2f2f none no-repeat scroll top left;
 }
 
 .sidebox .spacer.no-icon {
@@ -699,7 +722,7 @@ ul.flat-vert {text-align: left;}
 
 .sidebox .subtitle {
     margin-left: 10px;
-    color: dimgray;
+    color: #555;
     font-size: 110%;
 }
 
@@ -760,37 +783,48 @@ ul.flat-vert {text-align: left;}
 
 /* thing rendering */
 
-.arrow {
-    margin: 2px 0px 0px 0px;
+.arrow {   background-position: left;
+		    margin-bottom: 2px;
+    margin-top: 0px;
+    margin-left: 0px;
     width: 100%;
-    height: 14px;
+    height: 26px;
     display: block;
     cursor: pointer;
-    background-position: center center;
-    background-repeat: no-repeat; 
-    width: 15px;
-    margin-left: auto;
-    margin-right: auto; 
+    margin-left: 0px;
+    margin-right: 15px; 
     outline: none;
-}
+    float: left;
+    background-position-y: center;
+    
+    }
+
+
 
 .arrow.upmod { 
-    background-image: url(../aupmod.gif);  /* SPRITE */
+    background-image: url(../nightmode_insightful_voted.png);  
+    background-repeat: no-repeat;
+
 }
 .arrow.downmod { 
-    background-image: url(../adownmod.gif);  /* SPRITE */
+    background-image: url(../nightmode_funny_voted.png); 
+    background-repeat: no-repeat;
 }
 .arrow.up { 
-    background-image: url(../aupgray.gif);  /* SPRITE */
+    background-image: url(../nightmode_insightful_unvoted.png);  
+    background-color: #2f2f2f;
+    background-repeat: no-repeat;
 }
 .arrow.down { 
-    background-image: url(../adowngray.gif);  /* SPRITE */
+    background-image: url(../nightmode_funny_unvoted.png);  
+    background-color: #2f2f2f;
+    background-repeat: no-repeat;
 }
 
 .midcol {
     float: left; 
-    margin-right: 7px;
-    margin-left: 7px; 
+    margin-top: 4px;
+    margin-left: 0px; 
     background: transparent; 
     overflow: hidden;
 }
@@ -809,10 +843,10 @@ body > .content .link.compressed .midcol {
 .domain a {
     color: #888;
     display: inline-block;
-    overflow: hidden;
+    /* overflow: hidden; */
     white-space: nowrap;
     text-overflow: ellipsis;
-    vertical-align: middle;
+    /* vertical-align: middle; */
     max-width: 19em;
 }
 .domain a:hover { text-decoration: underline; max-width: none; }
@@ -843,9 +877,9 @@ body > .content .link.compressed .midcol {
 }
 
 .tagline { color:#888; font-size:x-small; }
-.tagline a {color: #369; text-decoration: none; }
+.tagline a {color: #78bbec; text-decoration: none; }
 .tagline .friend    { color: orangered }
-.tagline .submitter { color: #0055df }
+.tagline .submitter { color: #4a8fff }
 .tagline .moderator, .green { color: @moderator-color }
 .tagline .admin { color: @admin-color; }
 .tagline .alum { color: #BE1337; }
@@ -977,7 +1011,7 @@ a.banned-user { color: red; }
 .flairselector img { margin: none; }
 
 .flairselector h2 {
-    background: #cee3f8;
+    background: #fffefe;
     padding-bottom: 2px;
     margin-bottom: 4px;
     text-align: center;
@@ -1059,14 +1093,14 @@ a.banned-user { color: red; }
 .embededmedia { margin-top: 5px; margin-left: 60px; }
 
 .thing .title {
-    color: blue;
+    color: #72b7e9;
     outline: none;
     margin-right: .4em;
     padding: 0px;
     overflow: hidden;
 }
 
-.thing .title:visited, .thing.visited .title { color: #551a8b }
+.thing .title:visited, .thing.visited .title { color: #62659b; }
 
 .thing.stickied.link a.title {
   font-weight: bold;
@@ -1196,7 +1230,7 @@ body.with-listing-chooser.explore-page #header .pagename {
 
 .explore-comment {
     .explore-label {
-        background-color: #cee3f8;
+        background-color: #fffefe;
         border: solid thin #5f99cf;
     }
     .tagline, .buttons, .thumbnail, .expando-button {
@@ -1259,7 +1293,7 @@ body.with-listing-chooser.explore-page #header .pagename {
     margin-left: 22px;
 }
 
-.sitetable { list-style-type: none; }
+.sitetable { color: #a6a6a6; list-style-type: none; margin-top: 16px;}
 .ajaxhook { position: absolute; top: -1000px; left: 0px; }
 
 .nextprev, .next-suggestions {
@@ -1269,8 +1303,8 @@ body.with-listing-chooser.explore-page #header .pagename {
 
     a {
         padding: 1px 4px;
-        background: #eee;
-        border: 1px solid #ddd;
+        background: #f3f3f3;
+        border: 1px solid #807f7f;
         border-radius: 3px;
         font-weight: bold;
     }
@@ -1654,7 +1688,7 @@ body.with-listing-chooser.explore-page #header .pagename {
     overflow: hidden;
     position: relative;
 }
-.link.promotedlink.unpaid   { background-color: #FFC; }
+.link.promotedlink.unpaid   { background-color: #3a5869; }
 .link.promotedlink.unseen   { background-color: #FFC; }
 .link.promotedlink.accepted { background-color: #9F9; }
 .link.promotedlink.rejected { background-color: #FF9A9A; }
@@ -1745,6 +1779,7 @@ body.with-listing-chooser.explore-page #header .pagename {
     margin: 5px;
     overflow: hidden; 
     font-size: larger;
+    color: white;
 }
 
 .menuarea .spacer {display: inline; margin-right: 15px}
@@ -1759,6 +1794,7 @@ body.with-listing-chooser.explore-page #header .pagename {
     font-size: 16px;
     font-weight: normal;
     margin: 10px 0;
+	color: #ccc;
 }
 
 .panestack-title a.title-button {
@@ -2056,8 +2092,8 @@ a.star { text-decoration: none; color: #ff8b60 }
 .thing .stub { display: none; }
 .link.last-clicked { border: 1px dashed gray; overflow: hidden; }
 
-.link { margin: 0; margin-bottom: 8px; padding-left: 3px; }
-.link .score {text-align: center; color: #c6c6c6;}
+.link { margin: 0; margin-bottom: 18px; padding-left: 9px; margin-top: 18px;}
+.link .score {text-align: center; }
 .link .title {font-size:medium; font-weight: normal; margin-bottom: 1px;}
 
 .link .child h3 {
@@ -2070,7 +2106,7 @@ a.star { text-decoration: none; color: #ff8b60 }
 
 .profile-page .link .rank, .single-page .link .rank { display: none; }
 
-.link .midcol {font-weight: bold; font-size: small;}
+.link .midcol {font-size: small; text-align: center; width: 62px;}
 
 .link .score.likes   { color: #FF8B60; }
 .link .score.dislikes { color: #9494FF; }
@@ -2119,7 +2155,7 @@ a.star { text-decoration: none; color: #ff8b60 }
   font-size: x-small;
 
   .midcol {
-    width: 15px;
+    width: 31px;
     margin: 0;
   }
 
@@ -2167,7 +2203,11 @@ a.star { text-decoration: none; color: #ff8b60 }
 
 /* comments */
 
-.comment, .content .details { margin-left: 10px; }
+.comment, .content .details { 
+	margin-left: 10px;
+	margin-top: 18px;
+	color: #888;
+ }
 
 .comment.noncollapsed {
     .numchildren {
@@ -2238,7 +2278,8 @@ body.show-controversial .comment.controversial > .entry .score:after {
 .comment {
     .midcol {
         margin-left: 0px;
-        width: 15px;
+        margin-right: 8px;
+        width: 31px;
     }
 
     .title {
@@ -2316,6 +2357,7 @@ textarea.gray { color: gray; }
 
     .midcol {
         visibility: visible;
+
     }
 }
 
@@ -2370,8 +2412,7 @@ textarea.gray { color: gray; }
     .md,
     blockquote,
     del {
-      color: inherit;
-    }
+          }
 }
 
 .message.recipient > .entry {
@@ -2380,7 +2421,7 @@ textarea.gray { color: gray; }
 
 .message.message-reply.recipient > .entry .head,
 .message.message-parent.recipient > .entry .head { 
-    color: black; 
+    color: #888; 
     font-weight: bold;
 }
 
@@ -2398,8 +2439,8 @@ textarea.gray { color: gray; }
   color:orangered; font-weight: bold;  
 }
 .message.new > .entry{ 
-    background-color:#F7F7F7;
-    border:1px solid #E9E9E9;
+    background-color:#4c4c4c;
+    border:1px solid #4e4e4e;
     padding: 6px;
 }
 
@@ -2410,14 +2451,14 @@ textarea.gray { color: gray; }
 
 .message.threaded .child {
     margin-left: 20px;
-    border-left: 2px dashed #E7E7E7;
+    border-left: 2px dashed #444444;
 }
 
 // message-reply and message-parent classes are only present in tree view
 .message.message-reply, .message.message-parent {
     &:not(.threaded) .entry {
         margin-left: 10px;
-        border-left: 2px dashed #E7E7E7;
+        border-left: 2px dashed #444444;
     }
 }
 
@@ -2521,7 +2562,7 @@ textarea.gray { color: gray; }
  }
 
 
-.message .subject { font-weight: bold; font-size: larger; }
+.message .subject { font-weight: bold; font-size: larger; color: white;}
 
 .message.gold {
     font-family: "Bitstream Charter", "Hoefler Text", "Palatino Linotype",
@@ -2629,6 +2670,7 @@ textarea.gray { color: gray; }
     margin-bottom: 15px;
     padding: 7px;
     float: left;
+    color: black;
 }
 
 .clippy-headline {
@@ -2683,7 +2725,7 @@ textarea.gray { color: gray; }
 
 
 
-.commentbody.border { background-color: #ffc; padding-left: 5px}
+.commentbody.border { background-color: #3a5869; padding-left: 5px}
 .commentbody.grayed {
     color: gray;
     background-color: #E0E0E0;
@@ -2733,7 +2775,7 @@ textarea.gray { color: gray; }
     color: gray;
     padding: 5px;
     margin: 15px auto;
-    border:1px solid #F0F0F0;
+    border:1px solid #807f7f;
     display: flex;
     display: -webkit-flex;
     max-width: 600px;
@@ -2746,7 +2788,7 @@ textarea.gray { color: gray; }
     flex: 0 0 25%;
     margin: 10px 0;
     padding: 0 15px;
-    border-left: 1px solid #E0E0E0;
+    border-left: 1px solid #807f7f;
     box-sizing: border-box;
  }
 
@@ -2813,6 +2855,7 @@ textarea.gray { color: gray; }
 
 .login-form-side #remember-me * {
     vertical-align:middle;
+	color: #ccc;
 }
 
 /*the checkbox*/
@@ -3128,9 +3171,9 @@ label + #moresearchinfo {
 
 
 .searchpane {
-    margin: 5px 305px 5px 0px;
+    margin: 5px 387px 5px 0px;
     padding-left: 96px;
-    background: #E0E0E0 url(../search-large.png) 26px center no-repeat;
+    background: #000000 url(../search-large.png) 26px center no-repeat;
 } 
 
 .search-summary {
@@ -3157,6 +3200,7 @@ label + #moresearchinfo {
 #search {
     /* Allow the search icon to be on the same line as the search box. */
     white-space: nowrap;
+	
 }
 
 #searchexpando, #moresearchinfo {
@@ -3167,12 +3211,14 @@ label + #moresearchinfo {
     border: 1px solid gray;
     font-size: 13px;
     font-family: verdana; /* Override Chrome's defaults. */
+	color: white;
     width: 300px;
     .box-sizing(border-box);
     padding: 6px;
     padding-right: 25px; /* 13px image + 6px right margin + 6px left margin */
     padding-left: 9px;
     vertical-align: middle;
+	background-color: #101010;
 }
 
 #search input[type=submit] {
@@ -3508,7 +3554,6 @@ label + #moresearchinfo {
     padding: 11px 15px;
     border: 1px solid #bbb;
     border-radius: 2px;
-    background: #fdffe8;
 }
 
 .usertable > .toggle .option.main:before {
@@ -3536,9 +3581,6 @@ label + #moresearchinfo {
     display: inline;
 }
 
-.usertable tr:hover {
-    background-color: #e5efff;
-}
 
 .usertable tr.banned-user,
 .usertable tr.banned-user a,
@@ -4024,7 +4066,7 @@ button.button[disabled] {
 .blog5 .right { margin-right: 5px; font-size: medium; font-style: italic;  }
 
 .optional {color: green}
-.instructions { font-size: larger;  }
+.instructions { font-size: larger; color: wheat; }
 .instructions h1, .instructions h2, .instructions h3 { margin-top: 20px; margin-bottom: 20px;  }
 .instructions p { margin: 10px; max-width: 60em}
 .instructions pre { margin: 5px;  margin-right: 10px; }
@@ -4126,7 +4168,7 @@ body.contact-us-page {
 }
 
 .contact-us-page .details li {
-    background-color: #fafafa;
+    background-color: #464646;
     font-size: small;
     border: 1px solid #ccc;
     margin: 0px 40px 10px 40px;
@@ -4278,7 +4320,7 @@ form input[type=radio] {margin: 2px .5em 0 0; }
 #url-field .title-status { color: red; font-size: small}
 
 .content.submit .info-notice {
-    background-color: #E4F2FB;
+    background-color: #081819;
     border: 1px solid #5F99CF;
     padding: 9px;
     margin-bottom: 12px;
@@ -4438,7 +4480,7 @@ form input[type=radio] {margin: 2px .5em 0 0; }
 
 .over18 button { margin: 0 10px 0 10px; padding: 5px}
 
-@color-stamp-text-dark: @color-semi-black;
+@color-stamp-text-dark: #c5c5c5;
 @color-stamp-text-light: @color-white;
 @color-nsfw-stamp: darken(@color-warning-red, 5%);
 @color-quarantine: @color-yellow;
@@ -4574,10 +4616,13 @@ form input[type=radio] {margin: 2px .5em 0 0; }
     float: left; 
     font-size: 0;
     margin: 0;
-    margin-right: 5px;
-    margin-bottom: 2px;
+    margin-left: 0px;
+    margin-right: 6px;
+    margin-top: 4px;
+    margin-bottom: 0px;
     overflow: hidden;
     width: 70px; 
+    border-radius: 5px;
 }
 
 .thumbnail.nsfw {
@@ -4599,7 +4644,7 @@ form input[type=radio] {margin: 2px .5em 0 0; }
 /* CSS customisation page */
 
 .stylesheet-customize-container { }
-.stylesheet-customize-container textarea { font-family: "Bitstream Vera Sans Mono", Consolas, monospace; margin: 0; padding: 0px; }
+.stylesheet-customize-container textarea { font-family: "Bitstream Vera Sans Mono", Consolas, monospace; margin: 0; padding: 6px; }
 .stylesheet-customize-container h2 { margin-top: 15px; margin-bottom: 10px;  }
 
 .image-upload .new-image { margin-left: 20px }
@@ -4714,7 +4759,7 @@ ul#image-preview-list .description pre {
 .linefield.mobile {
   width: 512px;
   background-color: #EFF7FF;
-  border: 1px solid #CEE3F8;
+  border: 1px solid #fffefe;
 }
 
 .private-feeds.instructions .prefright { 
@@ -4810,7 +4855,7 @@ ul#image-preview-list .description pre {
 #sr-more-link {
     color: black;
     background-color: #f0f0f0;
-    position: absolute;
+    position: relative;
     right: 0;
     top: 0;
     padding: 0 5px 0 15px;
@@ -4832,7 +4877,7 @@ ul#image-preview-list .description pre {
 
 .subscription-box .title {
     font-size: medium;
-    color: blue;
+    color: #78bbce;
     margin-right: 5px;
 }
 
@@ -4954,6 +4999,7 @@ ul#image-preview-list .description pre {
 
 .sr-name-row {
     cursor: default;
+	color: black;
  }
 
 .sr-name-row.sr-selected {
@@ -4989,12 +5035,13 @@ ul#image-preview-list .description pre {
     width: 520px;
     border-top: 4px solid #5f99cf;
     padding-top: 10px;
- }
+}
 
 .formtabs-content .infobar {
     margin: 0;
+    color: white; 
     padding: 5px;
- }
+}
 
 ul.tabmenu.formtab {
     display: block;
@@ -5077,6 +5124,7 @@ ul.tabmenu.formtab {
     }
 
     &.expando-nsfw-overlay {
+        background: @expando-nsfw-gate-color;
         height: 100%;
         left: 0;
         position: absolute;
@@ -5165,10 +5213,10 @@ ul.tabmenu.formtab {
 
 .expando-button {
     float: left;
-    height: 23px;
+    height: 24px;
     width: 23px;
     margin: 2px 5px 2px 0;
-    background: white none no-repeat scroll center center;
+    background: #2f2f2f none no-repeat scroll center center;
 }
 
 .expando-button.selftext.collapsed {
@@ -5221,15 +5269,15 @@ ul.tabmenu.formtab {
 /******** self text stuff ****/
 .subreddit .usertext .md {
     padding: 2px 5px;
-    background-color: #fafafa;
+    background-color: #464646;
     border: 1px solid #CCC;
     border-radius: 7px;
 }
 
 .link .usertext-body .md {
-    background-color: #fafafa;
-    border: 1px solid #369;
-    border-radius: 7px;
+    background-color: #464646;
+    border: 1px solid #808080;
+    border-radius: 12px;
 }
 
 
@@ -5250,7 +5298,7 @@ ul.tabmenu.formtab {
 
 /*permalinks*/
 .usertext.border .usertext-body {
-    background-color: #ffc; padding-left: 5px;
+    background-color: #3a5869; padding-left: 5px;
 }
 
 .usertext.grayed .usertext-body {
@@ -5299,7 +5347,7 @@ ul.tabmenu.formtab {
 /*** roundfield stuff *******/
 .roundfield {
     width: 500px;
-    background-color: #cee3f8;
+    background-color: #050505;
     border-radius: 4px;
     padding: 5px 10px 10px 10px;
     font-size: large;
@@ -5330,7 +5378,6 @@ ul.tabmenu.formtab {
 #compose-message .roundfield select {
     font-size: 100%;
     width: 492px;
-    padding: 3px;
     margin: 0;
     border: 1px solid gray;
 }
@@ -5347,15 +5394,15 @@ ul.tabmenu.formtab {
     width: 514px;
     padding: 7px 5px;
     font-size: large;
-    background-color: #CEE3F8;
+    background-color: #3e3e3e;
     margin-bottom: 10px;
 }
 
 .linefield .title {
-    /*background-color:#CEE3F8;
+    /*background-color:#fffefe;
     /*background-color:#EFF7FF;*!/
-    color: #336699;*/
-    color: blue;
+    color: #336699;
+    color: blue;*/
     font-weight:bold;
     padding:1px 10px;
 }
@@ -5405,7 +5452,7 @@ ul.colors {
     }
 
     .swatch {
-      border: 1px solid #CEE3F8;
+      border: 1px solid #fffefe;
     }
 
     input[type=color] {
@@ -5435,7 +5482,7 @@ ul.colors {
 }
 
 .linefield .linefield-content {
-    /*border-color:#CEE3F8;
+    /*border-color:#fffefe;
     /*border-color:#EFF7FE;*!/
     border-style:solid none none;
     border-width:4px medium medium;*/
@@ -6184,8 +6231,7 @@ table.lined-table {
 }
 
 .trophy-area .content {
-    background-color: #f5f5f5;
-}
+   }
 
 .trophy-info {
     text-align: center;
@@ -6760,7 +6806,7 @@ div #campaign-field {
 }
 
 .sponsored-page {
-    @bg-color: lighten(#cee3f8, 5%);
+    @bg-color: lighten(#fffefe, 5%);
     width: 800px;
     margin: auto;
     color: lighten(black, 5%);
@@ -6847,7 +6893,7 @@ div #campaign-field {
     }
 
     button {
-        @color: desaturate(darken(#CEE3F8, 5%), 15%);
+        @color: desaturate(darken(#fffefe, 5%), 15%);
         .button-style(@color, darken(@color, 5%), darken(@color, 15%));
         
         margin: 0;
@@ -6982,7 +7028,7 @@ div #campaign-field {
     }
 
     .editor {
-        @background-color: #CEE3F8;
+        @background-color: #fffefe;
         .image-field {
             position: relative;
             overflow: auto;
@@ -7309,7 +7355,7 @@ dd { margin-left: 20px;  }
     text-align: center;
     padding: 0 1em;
     border: 1px solid white;
-    background-color: #CEE3F8;
+    background-color: #fffefe;
   }
 
   thead th.blank {
@@ -7382,6 +7428,7 @@ dd { margin-left: 20px;  }
 /* title box */
 .titlebox {
     font-size: larger;
+	color: white;
 }
 
 .titlebox h1 {
@@ -7390,15 +7437,17 @@ dd { margin-left: 20px;  }
     margin-bottom: 5px;
     font-weight: bold;
     font-size: 19px;
+	color: white;
 }
 
 .titlebox h1 a {
-    color: black;
+    color: #888;
 }
 
 .titlebox .karma {
     font-size: 18px;
     font-weight: bold;
+	color: white;
 }
 
 .titlebox .fancy-toggle-button {
@@ -7800,6 +7849,7 @@ dd { margin-left: 20px;  }
     border: 1px solid gray;
     font-size: larger;
     list-style: none;
+    border-radius: 12px;
 }
 
 .sidecontentbox .more { 
@@ -7848,7 +7898,7 @@ dd { margin-left: 20px;  }
     padding: 5px 0px;
     font-size: smaller;
     color: gray;
-    background: white none no-repeat scroll center left;
+    background: #2f2f2f none no-repeat scroll center left;
 }
 
 .usertable .moderator.toggle .main:before,
@@ -7909,7 +7959,7 @@ dd { margin-left: 20px;  }
 }
 
 .icon-menu a {
-    background: white none no-repeat scroll center left;
+    background: #2f2f2f none no-repeat scroll center left;
 } 
 .icon-menu li {margin: 5px 0;}
 
@@ -7993,8 +8043,9 @@ dd { margin-left: 20px;  }
 
 .linkinfo {
     padding: 5px;
-    border: 1px solid #5f99cf;
-    background-color: #EFF7FF;
+    border: 1px solid #3a3a3a;
+    background-color: #3a3a3a;
+	color: #ccc;
     font-family:arial,helvetica,sans-serif;
     font-size: larger;
     border-radius:3px;
@@ -8370,7 +8421,7 @@ form#banned textarea {
 }
 
 .gold-expiration-info div:last-of-type {
-    margin-top: -10px;
+    margin-top: 0px;
 }
 
 .gold-expiration-info .karma {
@@ -8394,7 +8445,7 @@ form#banned textarea {
     color: #583800;
     margin: 0px 5px 15px;
     padding: 7px 10px 7px 7px;
-    max-width: 550px;
+    max-width: 35%;
 }
 
 .gold-accent.roundfield {
@@ -8597,7 +8648,7 @@ form#banned textarea {
 }
 
 .server-seconds {
-    background-color: #EFF7FF;
+    background-color: #586572;
     border: 1px solid #5F99CF;
     text-align: center;
 
@@ -8653,8 +8704,8 @@ form#banned textarea {
 }
 
 .new-comment .usertext-body {
-    background-color: #e5efff;
-    border: solid 1px #cddaf3;
+    background-color: #4c4c4c;
+    border: solid 1px #4e4e4e;
     margin: -1px 0;
     padding: 0 4px;
 }
@@ -9035,7 +9086,7 @@ form#banned textarea {
 
 .api-help .sidebar .head {
     position: relative;
-    background: url(../xray-snoo-head.png) top center no-repeat;
+    /* background: url(../xray-snoo-head.png) top center no-repeat; */
     height: 188px;
     margin-bottom: -78px;
     z-index: 2;
@@ -9043,14 +9094,14 @@ form#banned textarea {
 
 .api-help .sidebar .feet {
     position: relative;
-    background: url(../xray-snoo-feet.png) top center no-repeat;
+    /* background: url(../xray-snoo-feet.png) top center no-repeat; */
     height: 75px;
     margin-top: -42px;
     z-index: 2;
 }
 
 .api-help .toc {
-    background: #181818 url(../xray-snoo-body.png) center repeat-y;
+    /* background: #181818 url(../xray-snoo-body.png) center repeat-y; */
     border: 5px solid #959595;
     border-radius: 8px;
     padding: 15px 2em 0 2em;
@@ -9366,7 +9417,7 @@ form#banned textarea {
 
 .sr-interest-bar {
     position: relative;
-    background: #cee3f8 url(../snoo-upside-down.png) 15px top no-repeat;
+    background: #fffefe url(../snoo-upside-down.png) 15px top no-repeat;
     padding: 5px;
     overflow: hidden;
     border: 1px solid #336699;
@@ -10137,7 +10188,7 @@ body.with-listing-chooser {
 
         &.selected {
             position: relative;
-            background: lighten(#cee3f8, 6%);
+            background: lighten(#fffefe, 6%);
             border-color: lighten(#369, 40%);
             margin-right: -@lc-grippy-width;
             padding-right: @lc-grippy-width;
@@ -10805,8 +10856,8 @@ body.with-listing-chooser {
   input[type=text], input[type=email], textarea {
     .box-sizing(border-box);
     border: 1px solid @light;
-    color: @dark;
-    background-color: #fff;
+    color: #e8e8e8;
+    background-color: #505050;
     font-family: @gold-fonts;
     font-style: italic;
     padding: 5px;
@@ -11034,9 +11085,9 @@ body.with-listing-chooser {
     }
 
     .tabmenu li.selected a {
-      background-color: #ffffff;
-      border-color: @gold;
-      border-bottom-color: #ffffff;
+      background-color: #2f2f2f;
+      border-color: #000;
+      border-bottom-color: #2f2f2f;
     }
 
     #sr-header-area {
@@ -11105,7 +11156,6 @@ body.with-listing-chooser {
 .subreddit-report-form,
 .action-form {
     display: none;
-    background-color: #f6e69f;
     border: thin solid #d8bb3c;
     padding: 5px;
     margin: 5px 0;
@@ -11133,8 +11183,8 @@ body.with-listing-chooser {
 }
 
 .subreddit-report-form {
-    @bg-color: #FBFBFB;
-    @text-color: @color-semi-black;
+    @bg-color: #2f2f2f;
+    @text-color: #c5c5c5;
 
     font-family: "Helvetica Neue", "Helvetica", "Arial", sans-serif;
     background-color: @bg-color;
@@ -11495,3 +11545,67 @@ body:not(.loggedin) .report-button {
         }
     }
 }
+
+
+
+
+/* SAIDIT CUSTOM */
+/* TODO: transition all of these to theme-custom.less, test spritesheet generation if used there */
+.footer-banner {
+	position: absolute;
+	bottom: 0;
+	width: 100%;
+	min-height: 15px;
+	background: transparent url(../footer-banner.jpg) repeat-x bottom left;
+}
+
+/* header: background image, centered large logo */
+#header {
+	background-color: #000000;
+	background-image: url(../header-banner-85.jpg);
+	background-position: top left;
+	background-repeat: no-repeat;
+	min-height: 83px; /* can fine tune and hide top of banner */
+	border-color: #000000;
+}
+#header-img.default-header {
+	display: block;
+	margin: 0px 0 0px 0; /* can fine tune vertical posittion */
+ 	
+	/* NOTE: you can only set these styles because the logo has been removed from the sprite image */
+	background-position: 450px 4px;
+	background-repeat: no-repeat;
+}
+.pagename, .pagename a {
+	color: #ffffff;
+}
+
+
+/* header: transparent header */
+#sr-header-area, #sr-more-link {
+	background: none;
+}
+#sr-more-link, .sr-bar a, .dropdown.srdrop .selected {
+	color: #ffffff;
+}
+#sr-more-link {
+	background-color: rgba(0,0,0,0.5);
+	padding-left: 5px;
+}
+#header-bottom-right {
+	background: none;
+	a, .user, .separator {
+		color: #ffffff;
+	}
+	.user a:hover {
+		text-decoration: underline;
+	}
+}
+#sr-header-area {
+	border-bottom: none;
+}
+
+/* CUSTOM: See more custom imports at top of file */
+@import "expando-md.less";
+@import "theme-custom.less";
+@import "themes/daymode.less";

@@ -27,6 +27,9 @@ import hashlib
 import hmac
 import time
 
+# CUSTOM
+import random, string
+
 from pylons import request
 from pylons import tmpl_context as c
 from pylons import app_globals as g
@@ -50,7 +53,7 @@ from r2.models.bans import TempTimeout
 from r2.models.last_modified import LastModified
 from r2.models.modaction import ModAction
 from r2.models.trylater import TryLater
-
+from r2.models.globalban import GlobalBan
 
 trylater_hooks = hooks.HookRegistrar()
 COOKIE_TIMESTAMP_FORMAT = '%Y-%m-%dT%H:%M:%S'
@@ -74,7 +77,7 @@ class Account(Thing):
                                               )
     _int_prop_suffix = '_karma'
     _essentials = ('name', )
-    _defaults = dict(pref_numsites = 25,
+    _defaults = dict(pref_numsites = 100,
                      pref_newwindow = False,
                      pref_clickgadget = 5,
                      pref_store_visits = False,
@@ -87,7 +90,7 @@ class Account(Thing):
                      pref_min_comment_score = -4,
                      pref_num_comments = g.num_comments,
                      pref_highlight_controversial=False,
-                     pref_default_comment_sort = 'confidence',
+                     pref_default_comment_sort = 'top',
                      pref_lang = g.lang,
                      pref_content_langs = (g.lang,),
                      pref_over_18 = False,
@@ -158,6 +161,18 @@ class Account(Thing):
                      in_timeout=False,
                      has_used_mobile_app=False,
                      disable_karma=False,
+
+                     # CUSTOM
+                     pref_chat_enabled=True,
+                     pref_chat_sidebar_size=g.live_config['chat_default_sidebar_size'],
+                     pref_chat_user=g.live_config['chat_default_username'],
+                     pref_chat_client_user=g.live_config['chat_default_username'],
+                     pref_chat_client_password='',
+                     pref_subscriptions_unsubscribe='subs_do_nothing',
+                     pref_site_index=g.site_index_user_configurable_default,
+                     pref_site_theme=g.live_config['site_theme_default'],
+                     pref_lightswitch=False if g.live_config['site_theme_lightswitch_default'] == 'off' else True,
+                     pref_sendreplies=True,
                      )
     _preference_attrs = tuple(k for k in _defaults.keys()
                               if k.startswith("pref_"))
@@ -364,6 +379,26 @@ class Account(Thing):
         if (self.link_karma < g.live_config["create_sr_link_karma"] and
                 self.comment_karma < g.live_config["create_sr_comment_karma"]):
             return False
+
+        # CUSTOM - allow subreddit creation once every X days
+        # To avoid checking all subs, we get a list of user's contributed to subs,
+        # and then check the sub author and sub creation date. Works even if they
+        # create a sub then quit as moderator.
+        # NOTE: user_subreddits() safely covers subs returned by special_reddits() with "contributor" and "moderator"
+        # TODO: Use the can_create_subreddit hook to do this stuff elsewhere
+        if g.live_config["create_sr_ratelimit_once_per_days"] > 0:
+            from r2.models import Subreddit
+            user_sr_ids = Subreddit.user_subreddits(self)
+            if user_sr_ids:
+                min_last_created = datetime.today() - timedelta(days=int(g.live_config["create_sr_ratelimit_once_per_days"]))
+                srs = Subreddit._byID(user_sr_ids)
+                for sr in srs.itervalues():
+                    if sr.author_id == self._id and sr._date > min_last_created.replace(tzinfo=g.tz) and not c.user_is_admin and not self.employee:
+                        # g.log.warning("!!! dbg: user %s cannot create sub, created %s at %s, once every %s days max" % (self.name, sr.name, sr._date, g.live_config["create_sr_ratelimit_once_per_days"]))
+                        return False
+
+        if self.is_global_banned:
+            return True
 
         return True
 
@@ -751,6 +786,10 @@ class Account(Thing):
         """
         return 'force_password_reset' in self._t
 
+    # SaidIt: Global Bans
+    @property
+    def is_global_banned(self):
+        return GlobalBan._user_banned(self._id)
 
 class FakeAccount(Account):
     _nodb = True
@@ -920,6 +959,12 @@ def register(name, password, registration_ip):
                 # new accounts keep the profanity filter settings until opting out
                 pref_no_profanity=True,
                 registration_ip=registration_ip,
+
+                # CUSTOM - Set chat defaults
+                pref_chat_user=name,
+                pref_chat_client_user=''.join(random.choice(string.ascii_letters+string.digits) for i in range(30)),
+                pref_chat_client_password=''.join(random.choice(string.ascii_letters+string.digits) for i in range(30)),
+
             )
             account._commit()
 

@@ -37,13 +37,13 @@
 
 <%def name="interstitial_message()">
   <p>
-    ${_("The moderators of this subreddit have set it to private. You must be a moderator or approved submitter to visit.")}
+    ${_("The moderators of this sub have set it to private. You must be a moderator or approved submitter to visit.")}
   </p>
 </%def>
 
 <%def name="interstitial_buttons()">
   <div class="buttons">
-    <a class="c-btn c-btn-primary login-required" href="/message/compose/?to=/r/${thing.sr_name}">
+    <a class="c-btn c-btn-primary login-required" href="/message/compose/?to=/${g.brander_community_abbr}/${thing.sr_name}">
       ${_("message the moderators")}
     </a>
   </div>
